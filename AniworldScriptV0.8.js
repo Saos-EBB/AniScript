@@ -1,5 +1,3 @@
-
-
 // ==UserScript==
 // @name             AniwordScriptV0.8
 // @name:de          AniwordScriptV0.8
