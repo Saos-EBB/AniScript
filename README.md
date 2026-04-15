@@ -23,9 +23,12 @@ A Tampermonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:/
 
 ## Installation
 
-1. Install [Tampermonkey](https://www.tampermonkey.net/) for your browser
+1. Install [Violentmonkey](https://violentmonkey.github.io/) for your browser
 2. Click **[Install Script](#)** *(replace with your Greasyfork or raw GitHub link)*
 3. Visit [aniworld.to](https://aniworld.to) or [s.to](https://s.to) and open any episode
+
+> Tested on **Brave** with **Violentmonkey**. Other browsers and userscript managers (Tampermonkey, Greasemonkey) may work but are not tested.
+
 
 ---
 
@@ -75,8 +78,20 @@ Open the settings panel by **right-clicking** the autoplay toggle button in the 
 
 ## Requirements
 
-- [Tampermonkey](https://www.tampermonkey.net/) (Chrome, Firefox, Edge, Safari)
+- [Violentmonkey](https://violentmonkey.github.io/) (tested on Brave)
 - No additional setup needed
+---
+## Contributing
+
+This is a personal userscript tailored to my own needs — no active development roadmap.
+
+That said, feel free to:
+
+- 🐛 [Open an issue](https://github.com/Saos-EBB/AniScript/issues) if you find a bug
+- 💡 [Start a discussion](https://github.com/Saos-EBB/AniScript/discussions) if you have a feature request or suggestion
+- 🍴 Fork the repo and adapt it to your own needs (GPL-3.0)
+
+I'll have a look when I find the time.
 
 ---
 
