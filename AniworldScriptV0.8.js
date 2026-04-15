@@ -1,10 +1,10 @@
 
 
 // ==UserScript==
-// @name             AniworldAddonV0.7
-// @name:de          AniworldAddonV0.7
-// @description      Autoplay for Aniworld.to and S.to with configurable skip hotkeys, auto-skip at video start, language memory, and more
-// @description:de   Autoplay für Aniworld.to und S.to mit konfigurierbaren Skip-Hotkeys, Sprachspeicherung und mehr
+// @name             AniwordScriptV0.8
+// @name:de          AniwordScriptV0.8
+// @description      Based on AniworldAddonV0.7 by AniPlayer (https://greasyfork.org/users/1400386), modified and extended by Saos-EBB
+// @description:de   Autoplay für Aniworld.to  mit konfigurierbaren Skip-Hotkeys, Sprachspeicherung und mehr
 // @version          4.13.6
 // @match            https://aniworld.to/*
 // @match            https://s.to/*
@@ -28,6 +28,16 @@
 // @grant            unsafeWindow
 // @run-at           document-body
 // ==/UserScript==
+/*
+ * Based on AniworldAddonV0.7 by AniPlayer
+ * Original: https://greasyfork.org/users/1400386
+ * License: GPL-3.0-or-later
+ *
+ * Modified by Saos-EBB
+ * Changes: removed Vidoza/Vidmoly support, streamlined UI,
+ * added configurable skip durations, AniScriptLight branding
+ * Repository: https://github.com/Saos-EBB/AniScript
+ */
 
 /* jshint esversion: 11 */
 /* global Notiflix, keyboardJS */
@@ -38,10 +48,10 @@
     // ============ SKIP CONFIGURATION ============
     const SKIP_CONFIG = {
         autoSkipSeconds: 0,  // seconds to auto-skip at video start
-        skipX: 30,            // X key
-        skipC: 60,            // C key
-        skipV: 90,            // V key
-        skipB: 120,           // B key
+        get skipX() { return advancedSettings[ADVANCED_SETTINGS_MAP.skipX]; },
+        get skipC() { return advancedSettings[ADVANCED_SETTINGS_MAP.skipC]; },
+        get skipV() { return advancedSettings[ADVANCED_SETTINGS_MAP.skipV]; },
+        get skipB() { return advancedSettings[ADVANCED_SETTINGS_MAP.skipB]; },
     };
     // ============================================
 
@@ -52,7 +62,7 @@
         en: {
             firstRunInfoText: () => `Right-click the button for settings. In fullscreen, scroll to switch providers.`,
             loading: 'Loading',
-            vidmolyNotReady: 'Vidmoly not ready yet.',
+
             couldNotLoad: 'Could not load',
             hotkeysGuide: 'Hotkeys Guide',
             close: 'Close',
@@ -105,7 +115,7 @@
         de: {
             firstRunInfoText: () => `Rechtsklick auf den Button für Einstellungen. Im Vollbild scrollen, um Anbieter zu wechseln.`,
             loading: 'Wird geladen',
-            vidmolyNotReady: 'Vidmoly ist noch nicht bereit.',
+
             couldNotLoad: 'Konnte nicht geladen werden',
             hotkeysGuide: 'Hotkeys-Anleitung',
             close: 'Schließen',
@@ -177,9 +187,9 @@
                 bgSecondary: '#16213e',
                 bgTertiary: '#0f3460',
                 bgHover: 'rgba(124, 131, 253, 0.1)',
-                accentPrimary: '#7c83fd',
+                accentPrimary: 'rgba(147,112,219,1)',
                 accentSecondary: '#9a9fff',
-                accentGlow: 'rgba(124, 131, 253, 0.3)',
+                accentGlow: 'rgba(147,112,219,0.4)',
                 accentGreen: 'rgba(34,197,94,1)',
                 textPrimary: '#e0e0e0',
                 textSecondary: '#a0a0b0',
@@ -191,13 +201,11 @@
                 // Header colors
                 headerBg: '#16213e',
                 headerText: '#e0e0e0',
-                headerAccent1: '#7c83fd',
+                headerAccent1: 'rgba(147,112,219,1)',
                 headerAccent2: '#9a9fff',
                 headerTag: '#a0a0b0',
-                logoBg: '#7c83fd',
-                logoText: '#e0e0e0',
                 // Submit button colors
-                submitBtnBg1: '#7c83fd',
+                submitBtnBg1: 'rgba(147,112,219,1)',
                 submitBtnBg2: '#9a9fff',
                 submitBtnText: '#e0e0e0'
             }
@@ -227,8 +235,6 @@
                 headerAccent1: 'rgba(99,124,249,1)',
                 headerAccent2: 'rgba(68,173,243,1)',
                 headerTag: 'rgba(168,192,204,1)',
-                logoBg: 'rgba(99,124,249,1)',
-                logoText: 'rgba(255,255,255,1)',
                 // Submit button colors
                 submitBtnBg1: 'rgba(99,124,249,1)',
                 submitBtnBg2: 'rgba(139,92,246,1)',
@@ -294,8 +300,6 @@
 
     // Names should be the exact same as in the providers list of the website
     const VIDEO_PROVIDERS_MAP = {
-        Vidmoly: 'Vidmoly',
-        Vidoza: 'Vidoza',
         VOE: 'VOE',
     };
     const CORE_SETTINGS_MAP = {
@@ -345,6 +349,10 @@
         fastForwardSizeS: 'fastForwardSizeS',
         largeSkipCooldownMs: 'largeSkipCooldownMs',
         playOnLargeSkip: 'playOnLargeSkip',
+        skipX: 'skipX',
+        skipC: 'skipC',
+        skipV: 'skipV',
+        skipB: 'skipB',
     };
     // Note that defaults are applied only on a very first run of the script
     const ADVANCED_SETTINGS_DEFAULTS = {
@@ -355,6 +363,10 @@
         [ADVANCED_SETTINGS_MAP.fastForwardSizeS]: 10,
         [ADVANCED_SETTINGS_MAP.largeSkipCooldownMs]: 300,
         [ADVANCED_SETTINGS_MAP.playOnLargeSkip]: true,
+        [ADVANCED_SETTINGS_MAP.skipX]: 30,
+        [ADVANCED_SETTINGS_MAP.skipC]: 60,
+        [ADVANCED_SETTINGS_MAP.skipV]: 90,
+        [ADVANCED_SETTINGS_MAP.skipB]: 120,
     };
 
     // Can not handle nested objects
@@ -1054,7 +1066,7 @@
                 button.title = (
                     !isAutoplayEnabled ? i18n.autoplayDisabled : i18n.autoplayEnabled
                 );
-                toggleDot.style.backgroundColor = wasEnabled ? '#e1e1e1' : 'mediumpurple';
+                toggleDot.style.backgroundColor = wasEnabled ? '#e1e1e1' : '#22c55e';
                 toggleDot.style.transform = wasEnabled ? 'translateX(0px)' : 'translateX(12px)';
             });
 
@@ -1070,7 +1082,7 @@
             toggleContainer.appendChild(toggleDot);
 
             toggleDot.className = 'Autoplay-button--toggle-dot';
-            toggleDot.style.backgroundColor = !isAutoplayEnabled ? '#e1e1e1' : 'mediumpurple';
+            toggleDot.style.backgroundColor = !isAutoplayEnabled ? '#e1e1e1' : '#22c55e';
             toggleDot.style.transform = (
                 !isAutoplayEnabled ? 'translateX(0px)' : 'translateX(12px)'
             );
@@ -1154,8 +1166,6 @@
                 const headerAccent1 = vars.headerAccent1 || vars.accentPrimary;
                 const headerAccent2 = vars.headerAccent2 || '#44adf3';
                 const headerTag = vars.headerTag || vars.textMuted;
-                const logoBg = vars.logoBg || vars.accentPrimary;
-                const logoText = vars.logoText || 'rgba(255,255,255,1)';
 
                 const css = `
                         .aw-settings-panel[data-theme="${themeId}"] {
@@ -1177,8 +1187,6 @@
                             --header-accent-1: ${headerAccent1};
                             --header-accent-2: ${headerAccent2};
                             --header-tag: ${headerTag};
-                            --logo-bg: ${logoBg};
-                            --logo-text: ${logoText};
                             font-family: ${vars.fontFamily};
                             border-radius: ${vars.borderRadius};
                         }
@@ -1188,19 +1196,8 @@
                         .aw-settings-panel[data-theme="${themeId}"] .aw-header-text h1 {
                             color: ${headerText};
                         }
-                        .aw-settings-panel[data-theme="${themeId}"] .aw-header-text h1 .aw-brand-world {
-                            color: ${headerAccent1};
-                        }
-                        .aw-settings-panel[data-theme="${themeId}"] .aw-header-text h1 .aw-brand-sto {
-                            color: ${headerAccent2};
-                        }
                         .aw-settings-panel[data-theme="${themeId}"] .aw-header-text .aw-tagline {
                             color: ${headerTag};
-                        }
-                        .aw-settings-panel[data-theme="${themeId}"] .aw-logo-icon {
-                            background: linear-gradient(135deg, ${logoBg}, ${vars.accentSecondary});
-                            color: ${logoText};
-                            box-shadow: 0 4px 20px ${vars.accentGlow};
                         }
                     `;
 
@@ -1287,9 +1284,9 @@
                         --bg-secondary: #12121a;
                         --bg-tertiary: #1a1a25;
                         --bg-hover: rgba(255, 255, 255, 0.02);
-                        --accent-primary: #ff3366;
+                        --accent-primary: rgba(147,112,219,1);
                         --accent-secondary: #7c3aed;
-                        --accent-glow: rgba(255, 51, 102, 0.4);
+                        --accent-glow: rgba(147,112,219,0.4);
                         --accent-green: #22c55e;
                         --text-primary: #f0f0f5;
                         --text-secondary: #a0a0b8;
@@ -1298,11 +1295,9 @@
                         --border-light: rgba(255, 255, 255, 0.1);
                         --header-bg: #12121a;
                         --header-text: #f0f0f5;
-                        --header-accent-1: #ff3366;
+                        --header-accent-1: rgba(147,112,219,1);
                         --header-accent-2: #44adf3;
                         --header-tag: #9090a8;
-                        --logo-bg: #ff3366;
-                        --logo-text: white;
 
                         font-family: 'Space Grotesk', -apple-system, sans-serif;
                         background: var(--bg-primary);
@@ -1319,7 +1314,7 @@
                         right: -50%;
                         width: 100%;
                         height: 100%;
-                        background: radial-gradient(circle, rgba(255, 51, 102, 0.08) 0%, transparent 60%);
+                        background: radial-gradient(circle, rgba(147,112,219,0.08) 0%, transparent 60%);
                         pointer-events: none;
                         z-index: 0;
                     }
@@ -1358,8 +1353,6 @@
                         --header-accent-1: #637cf9;
                         --header-accent-2: #44adf3;
                         --header-tag: #a8c0cc;
-                        --logo-bg: #637cf9;
-                        --logo-text: white;
 
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                         background: var(--bg-primary);
@@ -1388,62 +1381,11 @@
                         z-index: 1;
                     }
 
-                    .aw-logo-container {
-                        position: relative;
-                        width: 32px;
-                        height: 32px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    }
-
-                    .aw-logo-icon {
-                        position: relative;
-                        width: 32px;
-                        height: 32px;
-                        background: linear-gradient(135deg, var(--logo-bg, var(--accent-primary)), var(--accent-secondary));
-                        border-radius: 7px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: var(--logo-text, white);
-                        box-shadow: 0 2px 8px var(--accent-glow);
-                    }
-
-                    .aw-settings-panel[data-theme="aniworld"] .aw-logo-icon {
-                        background: linear-gradient(135deg, #637cf9, #8b5cf6);
-                        border-radius: 7px;
-                        box-shadow: 0 2px 10px rgba(99, 124, 249, 0.4);
-                    }
-
-                    .aw-settings-panel[data-theme="classic"] .aw-logo-icon {
-                        background: linear-gradient(135deg, #ff3366, #7c3aed);
-                        border-radius: 8px;
-                        box-shadow: 0 4px 20px var(--accent-glow);
-                    }
-
                     .aw-header-text h1 {
                         font-size: 14px;
                         font-weight: 600;
                         margin-bottom: 0px;
                         color: var(--header-text, var(--text-primary));
-                    }
-
-                    .aw-header-text h1 .aw-brand-world {
-                        color: var(--header-accent-1, #ff3366);
-                    }
-
-                    .aw-header-text h1 .aw-brand-sto {
-                        color: var(--header-accent-2, #44adf3);
-                    }
-
-                    .aw-header-text h1 .aw-brand-ap {
-                        color: var(--text-secondary);
-                        font-weight: 400;
-                        font-size: 12px;
-                        margin-left: 2px;
                     }
 
                     .aw-header-text .aw-tagline {
@@ -1835,7 +1777,7 @@
                     }
 
                     .aw-settings-panel[data-theme="classic"] .aw-number-input:focus {
-                        box-shadow: 0 0 0 3px rgba(255, 51, 102, 0.15);
+                        box-shadow: 0 0 0 3px rgba(147,112,219,0.15);
                     }
 
                     /* ============================================
@@ -2182,11 +2124,8 @@
             // Build the panel HTML
             panel.innerHTML = `
                     <div class="aw-settings-header">
-                        <div class="aw-logo-container">
-                            <div class="aw-logo-icon">AP</div>
-                        </div>
                         <div class="aw-header-text">
-                            <h1>Ani<span class="aw-brand-world">World</span> & <span class="aw-brand-sto">S</span>.to <span class="aw-brand-ap">AP</span></h1>
+                            <h1>AniScriptLight</h1>
                             <div class="aw-tagline">${i18n.autoplayEnabled.replace('Autoplay', 'Skip intros & outros')}</div>
                         </div>
                         <button class="aw-close-btn" title="Close">
@@ -2387,6 +2326,43 @@
             hotkeysSection.appendChild(hotkeysGuideBtn);
 
             advancedTab.appendChild(hotkeysSection);
+
+            // Skip Durations Section
+            const { section: skipDurationsSection, card: skipDurationsCard } = createSection('fast-forward', 'Skip Key Durations (X / C / V / B)', 'skipDurations');
+            const skipDurationsNote = document.createElement('div');
+            skipDurationsNote.className = 'aw-setting-description';
+            skipDurationsNote.style.cssText = 'padding: 4px 10px 4px 10px; color: var(--text-muted);';
+            skipDurationsNote.textContent = 'Hold Alt to skip backwards.';
+            skipDurationsCard.appendChild(skipDurationsNote);
+            skipDurationsCard.appendChild(createSettingRow(
+                'X key, sec',
+                'Seconds skipped by the X key',
+                createNumberInput('skipX', advancedSettings[ADVANCED_SETTINGS_MAP.skipX], 1, 600, 1, (v) => {
+                    advancedSettings[ADVANCED_SETTINGS_MAP.skipX] = v;
+                })
+            ));
+            skipDurationsCard.appendChild(createSettingRow(
+                'C key, sec',
+                'Seconds skipped by the C key',
+                createNumberInput('skipC', advancedSettings[ADVANCED_SETTINGS_MAP.skipC], 1, 600, 1, (v) => {
+                    advancedSettings[ADVANCED_SETTINGS_MAP.skipC] = v;
+                })
+            ));
+            skipDurationsCard.appendChild(createSettingRow(
+                'V key, sec',
+                'Seconds skipped by the V key',
+                createNumberInput('skipV', advancedSettings[ADVANCED_SETTINGS_MAP.skipV], 1, 600, 1, (v) => {
+                    advancedSettings[ADVANCED_SETTINGS_MAP.skipV] = v;
+                })
+            ));
+            skipDurationsCard.appendChild(createSettingRow(
+                'B key, sec',
+                'Seconds skipped by the B key',
+                createNumberInput('skipB', advancedSettings[ADVANCED_SETTINGS_MAP.skipB], 1, 600, 1, (v) => {
+                    advancedSettings[ADVANCED_SETTINGS_MAP.skipB] = v;
+                })
+            ));
+            advancedTab.appendChild(skipDurationsSection);
 
             // Timing Section
             const { section: timingSection, card: timingCard } = createSection('clock', 'Timing', 'timing');
@@ -2658,202 +2634,6 @@
         }
     }
 
-
-    class VidozaIframeInterface extends IframeInterface {
-        constructor(messenger) {
-            super(messenger);
-            waitForElement([
-                'div[id^=asg-]',
-                'div.prevent-first-click',
-                'div.vjs-adblock-overlay',
-                'iframe[data-asg-handled^="asg-"]',
-                'iframe[style*="z-index: 2147483647"]',
-            ].join(', '), {
-                existing: true,
-            }, (ads) => ads.remove());
-            (function() {
-                const originalAddEventListener = EventTarget.prototype.addEventListener;
-
-                EventTarget.prototype.addEventListener = function(type, listener, options) {
-                    // Get rid of ads
-                    if (type === 'mousedown' && (this === document || this === unsafeWindow)) {
-                        return;
-                    }
-
-                    return originalAddEventListener.call(this, type, listener, options);
-                };
-            }());
-        }
-
-        static get queries() {
-            return {
-                fullscreenBtn: 'button.vjs-fullscreen-control',
-                player: 'video#player_html5_api.vjs-tech',
-            };
-        }
-
-        async preparePlayer(player) {
-            this.setupHotkeys(player);
-            this.setupOutroSkipHandling(player);
-            this.restylePlayer(player);
-
-            let hasSkippedInitial = false;
-            player.addEventListener('timeupdate', function autoStartSkip() {
-                if (!hasSkippedInitial && coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart]) {
-                    const skipSeconds = SKIP_CONFIG.autoSkipSeconds;
-                    if (player.currentTime < skipSeconds) {
-                        player.currentTime = skipSeconds;
-                    }
-                    hasSkippedInitial = true;
-                }
-            });
-            this.handleAutoplay(player);
-
-            // Attach autoplay button and change fullscreen button behavior...
-            waitForElement(VidozaIframeInterface.queries.fullscreenBtn, {
-                existing: true,
-                onceOnly: true,
-            }, (fsBtn) => {
-                // Prevent focused buttons from being toggled by pressing space/enter
-                fsBtn.parentElement.addEventListener('keydown', (ev) => ev.preventDefault());
-                fsBtn.parentElement.addEventListener('keyup', (ev) => ev.preventDefault());
-
-                const newFsBtn = fsBtn.cloneNode(true);
-                const autoplayBtn = this.createAutoplayButton();
-                const settingsPane = this.settingsPane = this.createSettingsPane();
-
-                autoplayBtn.style.paddingBottom = '1px';
-
-                fsBtn.before(autoplayBtn);
-                fsBtn.replaceWith(newFsBtn);
-
-                const toggleSettingsPane = (ev) => {
-                    ev?.preventDefault();
-                    ev?.stopImmediatePropagation();
-
-                    settingsPane.hidden = !settingsPane.hidden;
-
-                    return false;
-                };
-                autoplayBtn.oncontextmenu = toggleSettingsPane;
-
-
-                newFsBtn.addEventListener('click', () => {
-                    this.messenger.sendMessage(IframeMessenger.messages.TOGGLE_FULLSCREEN);
-                });
-                this.messenger.sendMessage(IframeMessenger.messages.REQUEST_FULLSCREEN_STATE);
-            });
-        }
-
-        restylePlayer() {
-            GM_addStyle([
-                `
-          div.vjs-resolution-button, button.vjs-disable-ads-button {
-            display: none !important;
-          }
-        `,
-
-                `
-          div.video-js div.vjs-control-bar {
-            background-color: unset !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-slider {
-            background-color: rgb(112, 112, 112, 0.8) !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-play-progress {
-            background-color: #2979ff !important;
-            border-radius: 1em !important;
-            height: 0.4em !important;
-          }
-
-          div.video-js .vjs-play-progress:before {
-            font-size: 0.9em !important;
-            top: -.25em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-load-progress {
-            background-color: #808080 !important;
-            height: 0.4em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-progress-control .vjs-progress-holder {
-            height: 0.4em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-time-control, div.vjs-playback-rate .vjs-playback-rate-value, div.vjs-resolution-button .vjs-resolution-button-label {
-            line-height: 3em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-big-play-button {
-            background-color: rgb(0 132 255 / 75%) !important;
-          }
-
-          div.video-js .vjs-big-play-button:hover {
-            background-color: rgb(40 160 255 / 95%) !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-progress-control:hover .vjs-mouse-display:after, div.video-js .vjs-progress-control:hover .vjs-play-progress:after, div.video-js .vjs-progress-control:hover .vjs-time-tooltip, div.video-js .vjs-volume-panel .vjs-volume-control.vjs-volume-vertical, div.vjs-menu-button-popup .vjs-menu .vjs-menu-content {
-            background-color: rgb(0 132 255 / 75%) !important;
-          }
-        `,
-
-                `
-          #vplayer .video-js .vjs-time-control {
-            padding-right: 3.5em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-play-control {
-            margin-left: 0.5em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-progress-control {
-            margin-left: 0.8em !important;
-          }
-        `,
-
-                `
-          div.video-js .vjs-fullscreen-control {
-            margin-right: 0.5em !important;
-          }
-        `,
-            ].join(' '));
-            const currentTime = document.querySelector('div.vjs-current-time');
-            const remainingTime = document.querySelector('div.vjs-remaining-time');
-
-            remainingTime.replaceWith(currentTime);
-        }
-
-        updateFullscreenBtn({
-                                isInFullscreen
-                            }) {
-            const player = document.querySelector(VidozaIframeInterface.queries.player);
-            if (isInFullscreen) {
-                player.parentElement.classList.add('vjs-fullscreen');
-            } else {
-                player.parentElement.classList.remove('vjs-fullscreen');
-            }
-        }
-    }
 
     class VOEJWPIframeInterface extends IframeInterface {
         constructor(messenger) {
@@ -3740,45 +3520,25 @@
     // If context is iframe scope
     else {
         const isItVOEJWP = !!document.querySelector('meta[name="keywords"][content^="VOE"]');
-        const isItVidoza = !!document.querySelector('meta[content*="Vidoza"]');
-        if ([isItVidoza, isItVOEJWP].every(e => !e)) {
-            return;
-        }
+        if (!isItVOEJWP) return;
 
         const iframeMessenger = new IframeMessenger();
-        for (const {
-            condition,
-            interface: Interface
-        }
-            of [
-            {
-                condition: isItVidoza,
-                interface: VidozaIframeInterface
-            },
-            {
-                condition: isItVOEJWP,
-                interface: VOEJWPIframeInterface
-            },
-        ]) {
-            if (!condition) continue;
-            // Call early to get rid of ads and intercept listeners
-            const iframeInterface = new Interface(iframeMessenger);
-            window.addEventListener('load', async () => {
-                // Give a little bit of a time for the TopScopeInterface to prepare
-                await sleep(4);
-                await iframeMessenger.initCrossFrameConnection();
+        // Call early to get rid of ads and intercept listeners
+        const iframeInterface = new VOEJWPIframeInterface(iframeMessenger);
+        window.addEventListener('load', async () => {
+            // Give a little bit of a time for the TopScopeInterface to prepare
+            await sleep(4);
+            await iframeMessenger.initCrossFrameConnection();
 
-                waitForElement(Interface.queries.player, {
-                    existing: true,
-                    onceOnly: true,
-                }, async (player) => {
-                    await iframeInterface.init(player);
-                });
-            }, {
-                once: true
+            waitForElement(VOEJWPIframeInterface.queries.player, {
+                existing: true,
+                onceOnly: true,
+            }, async (player) => {
+                await iframeInterface.init(player);
             });
-            break;
-        }
+        }, {
+            once: true
+        });
     }
 }());
 

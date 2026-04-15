@@ -83,3 +83,8 @@ Open the settings panel by **right-clicking** the autoplay toggle button in the 
 ## License
 
 [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html)
+
+## Credits
+
+Based on [AniworldAddonV0.7](https://greasyfork.org/users/1400386) by **AniPlayer**, licensed under GPL-3.0.  
+Modified and extended by [Saos-EBB](https://github.com/Saos-EBB).
