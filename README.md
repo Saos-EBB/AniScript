@@ -11,12 +11,13 @@ A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:
 - **Auto-skip at start** — skips the first N seconds of every episode automatically
 - **Intro skip** — one-press hotkey to jump past the intro (configurable skip size)
 - **Fast forward / rewind hotkeys** — keyboard shortcuts for seeking
+- **Skip to next / previous Episode** - keyboard shortcuts for skipping
 - **Fullscreen hotkey** — toggle fullscreen via keyboard
 - **Highlight visited episodes** — previously opened episodes are marked in yellow
 - **Muted autoplay fallback** — if the browser blocks autoplay, the video starts muted and unmutes on first interaction
 - **Seamless episode navigation** — next episode loads without a full page reload
 - **Settings panel** — right-click the autoplay toggle button to open the settings UI
-- **VOE & Vidoza player support**
+- **VOE  player support**
 - **EN / DE localization**
 
 ---
@@ -99,6 +100,8 @@ I'll have a look when I find the time.
 ## License
 
 [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html)
+
+-- 
 
 ## Credits
 
