@@ -1,6 +1,6 @@
 # AniworldAddon
 
-A Tampermonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https://s.to), and [serienstream.to](https://serienstream.to) that enhances your watching experience with autoplay, skip controls, hotkeys, and more.
+A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https://s.to), and [serienstream.to](https://serienstream.to) that enhances your watching experience with autoplay, skip controls, hotkeys, and more.
 
 ---
 
@@ -80,6 +80,7 @@ Open the settings panel by **right-clicking** the autoplay toggle button in the 
 
 - [Violentmonkey](https://violentmonkey.github.io/) (tested on Brave)
 - No additional setup needed
+
 ---
 ## Contributing
 
