@@ -3,7 +3,7 @@
 // @name:de          AniwordScriptV0.8
 // @description      Based on AniworldAddonV0.7 by AniPlayer (https://greasyfork.org/users/1400386), modified and extended by Saos-EBB
 // @description:de   Autoplay für Aniworld.to  mit konfigurierbaren Skip-Hotkeys, Sprachspeicherung und mehr
-// @version          4.13.6
+// @version          0.0.8
 // @match            https://aniworld.to/*
 // @match            https://s.to/*
 // @match            https://serienstream.to/*
@@ -12,7 +12,7 @@
 // @author           AniPlayer
 // @namespace        https://greasyfork.org/users/1400386
 // @license          GPL-3.0-or-later; https://spdx.org/licenses/GPL-3.0-or-later.html
-// @icon             https://i.imgur.com/CEZGcX6.png
+// @icon             https://cdn.iconscout.com/icon/premium/png-512-thumb/monkey-icon-svg-download-png-2299128.png?f=webp&w=256
 // @require          https://cdnjs.cloudflare.com/ajax/libs/keyboardjs/2.7.0/keyboard.min.js#sha512-UrxaOZAJw5p38NProL/UrffryqdMdXFcEdyLt6eU89pH0N7KnmAe8G3ghNbH1qW5cDYdnaoEw1TcbHn8wuqAvw==
 // @require          https://cdn.jsdelivr.net/npm/notiflix@3.2.8/dist/notiflix-aio-3.2.8.min.js#sha512-XsGxeeCSQNP2+WGCUScwIO6sznCBBee4we6n8n6yoFgB+shnCXJZCY2snFqu+fgIbPd79ldRR1/5zQFMUQVSpg==
 // @grant            GM_addStyle
@@ -108,7 +108,15 @@
             commlinkPollingIntervalTooltip: 'Reflects messaging responsiveness between a player and a top scope. Might impact CPU usage if set too low. 40 should be enough. Page reload is required for this setting to take effect!',
             skipIntro: 'Skip Intro',
             autoplayEnabled: 'Autoplay is enabled',
-            autoplayDisabled: 'Autoplay is disabled'
+            autoplayDisabled: 'Autoplay is disabled',
+            prevEpisode: 'Previous episode*',
+            prevEpisodeTooltip: 'Hotkey to go to the previous episode. Page reload is required for this setting to take effect!',
+            nextEpisode: 'Next episode*',
+            nextEpisodeTooltip: 'Hotkey to go to the next episode. Page reload is required for this setting to take effect!',
+            cancelAutoplay: 'Cancel autoplay*',
+            cancelAutoplayTooltip: 'Hotkey to cancel the autoplay countdown. Page reload required.',
+            visitedEpisodeColor: 'Visited episode color',
+            visitedEpisodeColorTooltip: 'Color used to highlight visited episode links',
         },
         de: {
             firstRunInfoText: () => `Rechtsklick auf den Button für Einstellungen. Im Vollbild scrollen, um Anbieter zu wechseln.`,
@@ -161,7 +169,15 @@
             commlinkPollingIntervalTooltip: 'Spiegelt die Reaktionsfähigkeit der Nachrichtenübertragung zwischen einem Player und einem Top-Scope wider. Kann die CPU-Auslastung beeinträchtigen, wenn sie zu niedrig eingestellt ist. 40 sollten ausreichen. Ein Neuladen der Seite ist für diese Einstellung erforderlich!',
             skipIntro: 'Intro überspringen',
             autoplayEnabled: 'Autoplay ist aktiviert',
-            autoplayDisabled: 'Autoplay ist deaktiviert'
+            autoplayDisabled: 'Autoplay ist deaktiviert',
+            prevEpisode: 'Vorherige Episode*',
+            prevEpisodeTooltip: 'Hotkey für die vorherige Episode. Ein Neuladen der Seite ist für diese Einstellung erforderlich!',
+            nextEpisode: 'Nächste Episode*',
+            nextEpisodeTooltip: 'Hotkey für die nächste Episode. Ein Neuladen der Seite ist für diese Einstellung erforderlich!',
+            cancelAutoplay: 'Autoplay abbrechen*',
+            cancelAutoplayTooltip: 'Hotkey zum Abbrechen des Autoplay-Countdowns. Seitenneuladen erforderlich.',
+            visitedEpisodeColor: 'Farbe besuchter Episoden',
+            visitedEpisodeColorTooltip: 'Farbe für bereits besuchte Episodenlinks',
         }
     };
 
@@ -322,6 +338,9 @@
         fastForward: 'fastForward',
         fullscreen: 'fullscreen',
         largeSkip: 'largeSkip',
+        prevEpisode: 'prevEpisode',
+        nextEpisode: 'nextEpisode',
+        cancelAutoplay: 'cancelAutoplay',
     };
     // Note that defaults are applied only on a very first run of the script
     const HOTKEYS_SETTINGS_DEFAULTS = {
@@ -329,15 +348,20 @@
         [HOTKEYS_SETTINGS_MAP.fastForward]: 'right',
         [HOTKEYS_SETTINGS_MAP.fullscreen]: 'f',
         [HOTKEYS_SETTINGS_MAP.largeSkip]: '',
+        [HOTKEYS_SETTINGS_MAP.prevEpisode]: '',
+        [HOTKEYS_SETTINGS_MAP.nextEpisode]: '',
+        [HOTKEYS_SETTINGS_MAP.cancelAutoplay]: 'backspace',
     };
     const MAIN_SETTINGS_MAP = {
         highlightVisitedEpisodes: 'highlightVisitedEpisodes',
         shouldAutoplayMuted: 'shouldAutoplayMuted',
+        visitedEpisodeColor: 'visitedEpisodeColor',
     };
     // Note that defaults are applied only on a very first run of the script
     const MAIN_SETTINGS_DEFAULTS = {
         [MAIN_SETTINGS_MAP.highlightVisitedEpisodes]: true,
         [MAIN_SETTINGS_MAP.shouldAutoplayMuted]: true,
+        [MAIN_SETTINGS_MAP.visitedEpisodeColor]: '#ffdd00',
     };
     const ADVANCED_SETTINGS_MAP = {
         commlinkPollingIntervalMs: 'commlinkPollingIntervalMs',
@@ -484,7 +508,7 @@
             closeButton: true,
             messageMaxLength: 500,
             plainText: false,
-            position: 'left-top',
+            position: 'right-bottom',
             zindex: 3222222,
         };
         const reportDefaultOptions = {
@@ -554,6 +578,20 @@
             },
         };
     })();
+    function applyNotiflixTheme() {
+        const vars = getCurrentThemeVars();
+        Notiflix.Notify.init({
+            background: vars.bgSecondary,
+            textColor: vars.textPrimary,
+            successColor: vars.accentGreen,
+            warningColor: '#f59e0b',
+            failureColor: '#ef4444',
+            infoColor: vars.accentPrimary,
+            fontFamily: vars.fontFamily,
+        });
+    }
+    applyNotiflixTheme();
+
     function detectHold(element, callback, {
         holdTimeMs = 700,
         validPointerTypes = ['mouse', 'pen', 'touch'],
@@ -906,6 +944,7 @@
         static get messages() {
             return {
                 AUTOPLAY_NEXT: 'AUTOPLAY_NEXT',
+                AUTOPLAY_PREV: 'AUTOPLAY_PREV',
                 REQUEST_CURRENT_FRANCHISE_DATA: 'REQUEST_CURRENT_FRANCHISE_DATA',
                 REQUEST_FULLSCREEN_STATE: 'REQUEST_FULLSCREEN_STATE',
                 OPEN_HOTKEYS_GUIDE: 'OPEN_HOTKEYS_GUIDE',
@@ -942,6 +981,7 @@
                 statusCheckInterval: advancedSettings[ADVANCED_SETTINGS_MAP.commlinkPollingIntervalMs],
             });
             this.commLink.registerSendCommand(IframeMessenger.messages.AUTOPLAY_NEXT);
+            this.commLink.registerSendCommand(IframeMessenger.messages.AUTOPLAY_PREV);
             this.commLink.registerSendCommand(IframeMessenger.messages.REQUEST_CURRENT_FRANCHISE_DATA);
             this.commLink.registerSendCommand(IframeMessenger.messages.REQUEST_FULLSCREEN_STATE);
             this.commLink.registerSendCommand(IframeMessenger.messages.OPEN_HOTKEYS_GUIDE);
@@ -959,6 +999,8 @@
             return;
         }
     }
+
+    let activeAutoplayCancelFn = null;
 
     class IframeInterface {
         constructor(messenger) {
@@ -1062,9 +1104,11 @@
 
                 button.setAttribute('aria-checked', (!wasEnabled).toString());
                 button.title = (
-                    !isAutoplayEnabled ? i18n.autoplayDisabled : i18n.autoplayEnabled
+                    wasEnabled ? i18n.autoplayDisabled : i18n.autoplayEnabled
                 );
-                toggleDot.style.backgroundColor = wasEnabled ? '#e1e1e1' : '#22c55e';
+                button.style.background = '';
+                toggleContainer.style.backgroundColor = wasEnabled ? 'rgba(221, 221, 221, 0.5)' : '#3eb489';
+                toggleDot.style.backgroundColor = '#fff';
                 toggleDot.style.transform = wasEnabled ? 'translateX(0px)' : 'translateX(12px)';
             });
 
@@ -1072,15 +1116,17 @@
             button.title = (
                 !isAutoplayEnabled ? i18n.autoplayDisabled : i18n.autoplayEnabled
             );
+            button.style.background = '';
             button.appendChild(toggleContainer);
             button.setAttribute('aria-checked', (isAutoplayEnabled).toString());
             button.className = 'Autoplay-button';
 
             toggleContainer.className = 'Autoplay-button--toggle';
+            toggleContainer.style.backgroundColor = isAutoplayEnabled ? '#3eb489' : 'rgba(221, 221, 221, 0.5)';
             toggleContainer.appendChild(toggleDot);
 
             toggleDot.className = 'Autoplay-button--toggle-dot';
-            toggleDot.style.backgroundColor = !isAutoplayEnabled ? '#e1e1e1' : '#22c55e';
+            toggleDot.style.backgroundColor = '#fff';
             toggleDot.style.transform = (
                 !isAutoplayEnabled ? 'translateX(0px)' : 'translateX(12px)'
             );
@@ -1100,8 +1146,16 @@
           -webkit-user-select: none;
         }
 
+        .Autoplay-button:hover {
+          background: none !important;
+        }
+
         .Autoplay-button[aria-checked="true"] .Autoplay-button--toggle-dot {
           transform: translateX(12px);
+        }
+
+        .Autoplay-button[aria-checked="true"] .Autoplay-button--toggle {
+          background-color: #3eb489;
         }
 
         .Autoplay-button--toggle {
@@ -1112,12 +1166,13 @@
           border-radius: 6px;
           position: relative;
           display: inline-block;
+          transition: background-color 0.2s ease;
         }
 
         .Autoplay-button--toggle-dot {
           width: 12px;
           height: 12px;
-          background-color: #e1e1e1;
+          background-color: #fff;
           border-radius: 50%;
           position: absolute;
           top: 0;
@@ -2242,6 +2297,7 @@
                     panel.setAttribute('data-theme', value);
                     // Refresh custom theme CSS to ensure all styles are applied
                     applyCustomThemeCSS();
+                    applyNotiflixTheme();
                 })
             );
             appearanceCard.appendChild(themeRow);
@@ -2313,6 +2369,27 @@
                     hotkeysSettings[HOTKEYS_SETTINGS_MAP.largeSkip] = v.toLowerCase();
                 })
             ));
+            hotkeysCard.appendChild(createSettingRow(
+                i18n.prevEpisode,
+                i18n.prevEpisodeTooltip,
+                createTextInput('prevEpisode', hotkeysSettings[HOTKEYS_SETTINGS_MAP.prevEpisode], (v) => {
+                    hotkeysSettings[HOTKEYS_SETTINGS_MAP.prevEpisode] = v.toLowerCase();
+                })
+            ));
+            hotkeysCard.appendChild(createSettingRow(
+                i18n.nextEpisode,
+                i18n.nextEpisodeTooltip,
+                createTextInput('nextEpisode', hotkeysSettings[HOTKEYS_SETTINGS_MAP.nextEpisode], (v) => {
+                    hotkeysSettings[HOTKEYS_SETTINGS_MAP.nextEpisode] = v.toLowerCase();
+                })
+            ));
+            hotkeysCard.appendChild(createSettingRow(
+                i18n.cancelAutoplay,
+                i18n.cancelAutoplayTooltip,
+                createTextInput('cancelAutoplay', hotkeysSettings[HOTKEYS_SETTINGS_MAP.cancelAutoplay], (v) => {
+                    hotkeysSettings[HOTKEYS_SETTINGS_MAP.cancelAutoplay] = v.toLowerCase();
+                })
+            ));
 
             // Hotkeys Guide Button
             const hotkeysGuideBtn = document.createElement('button');
@@ -2329,7 +2406,7 @@
             const { section: skipDurationsSection, card: skipDurationsCard } = createSection('fast-forward', 'Skip Key Durations (X / C / V / B)', 'skipDurations');
             const skipDurationsNote = document.createElement('div');
             skipDurationsNote.className = 'aw-setting-description';
-            skipDurationsNote.style.cssText = 'padding: 4px 10px 4px 10px; color: var(--text-muted);';
+            skipDurationsNote.style.cssText = 'padding: 4px 10px 4px 10px; color: mediumpurple;';
             skipDurationsNote.textContent = 'Hold Alt to skip backwards.';
             skipDurationsCard.appendChild(skipDurationsNote);
             skipDurationsCard.appendChild(createSettingRow(
@@ -2382,6 +2459,22 @@
                     mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes] = v;
                 })
             ));
+            (() => {
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+                colorInput.style.cssText = 'width:36px;height:28px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-tertiary);cursor:pointer;padding:2px;';
+                colorInput.addEventListener('change', (e) => {
+                    mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor] = e.target.value;
+                    showSaveIndicator();
+                    this.messenger.sendMessage(IframeMessenger.messages.UPDATE_CORE_SETTINGS);
+                });
+                behaviorCard.appendChild(createSettingRow(
+                    i18n.visitedEpisodeColor,
+                    i18n.visitedEpisodeColorTooltip,
+                    colorInput
+                ));
+            })();
             behaviorCard.appendChild(createSettingRow(
                 i18n.playOnIntroSkip,
                 i18n.playOnIntroSkipTooltip,
@@ -2599,6 +2692,28 @@
                 });
             }
 
+            if (hotkeysSettings[HOTKEYS_SETTINGS_MAP.prevEpisode]) {
+                keyboardJS.bind(hotkeysSettings[HOTKEYS_SETTINGS_MAP.prevEpisode], (ev) => {
+                    ev.preventRepeat();
+                    this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_PREV);
+                });
+            }
+
+            if (hotkeysSettings[HOTKEYS_SETTINGS_MAP.nextEpisode]) {
+                keyboardJS.bind(hotkeysSettings[HOTKEYS_SETTINGS_MAP.nextEpisode], (ev) => {
+                    ev.preventRepeat();
+                    this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_NEXT);
+                });
+            }
+
+            const cancelAutoplayKey = hotkeysSettings[HOTKEYS_SETTINGS_MAP.cancelAutoplay] || 'backspace';
+            keyboardJS.bind(cancelAutoplayKey, (ev) => {
+                ev.preventRepeat();
+                if (activeAutoplayCancelFn) {
+                    activeAutoplayCancelFn();
+                }
+            });
+
             // ---- Fixed skip hotkeys (SKIP_CONFIG) ----
             const showSkipToast = (seconds, backward = false) => {
                 Notiflix.Notify.info(backward ? `⏮ -${seconds}s` : `⏭ +${seconds}s`, {
@@ -2626,7 +2741,44 @@
 
                 if (timeLeft <= coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS]) {
                     outroHasBeenReached = true;
-                    this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_NEXT);
+
+                    let secondsLeft = 5;
+                    let cancelled = false;
+
+                    const cancelFn = () => {
+                        cancelled = true;
+                        activeAutoplayCancelFn = null;
+                        clearInterval(ticker);
+                        Notiflix.Notify.info('⏹ Autoplay cancelled', {
+                            timeout: 1500,
+                            position: 'right-bottom',
+                            closeButton: false,
+                        });
+                    };
+                    activeAutoplayCancelFn = cancelFn;
+
+                    const showCountdown = (n) => {
+                        Notiflix.Notify.info(`⏭ Next episode in ${n}...`, {
+                            timeout: 1100,
+                            position: 'right-bottom',
+                            closeButton: false,
+                        });
+                    };
+
+                    showCountdown(secondsLeft);
+                    const ticker = setInterval(() => {
+                        if (cancelled) { clearInterval(ticker); return; }
+                        secondsLeft--;
+                        if (secondsLeft <= 0) {
+                            clearInterval(ticker);
+                            activeAutoplayCancelFn = null;
+                            if (!cancelled) {
+                                this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_NEXT);
+                            }
+                        } else {
+                            showCountdown(secondsLeft);
+                        }
+                    }, 1000);
                 }
             }, 250);
         }
@@ -2767,7 +2919,37 @@
                 autoplayBtn.style.flex = '0 0 auto';
                 autoplayBtn.style.outline = 'none';
 
+                const prevEpBtn = document.createElement('button');
+                prevEpBtn.type = 'button';
+                prevEpBtn.title = 'Previous episode';
+                prevEpBtn.style.cssText = 'width:44px;height:44px;padding:0;border-radius:50%;border:none;background:none !important;cursor:pointer;flex:0 0 auto;outline:none;';
+                const prevEpIcon = document.createElement('span');
+                prevEpIcon.textContent = '⏮';
+                prevEpIcon.style.cssText = 'font-size:16px;color:#fff;transition:opacity 0.2s ease;display:inline-block;';
+                prevEpBtn.appendChild(prevEpIcon);
+                prevEpBtn.addEventListener('mouseenter', () => { prevEpIcon.style.opacity = '0.65'; });
+                prevEpBtn.addEventListener('mouseleave', () => { prevEpIcon.style.opacity = '1'; });
+                prevEpBtn.addEventListener('click', () => {
+                    this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_PREV);
+                });
+
+                const nextEpBtn = document.createElement('button');
+                nextEpBtn.type = 'button';
+                nextEpBtn.title = 'Next episode';
+                nextEpBtn.style.cssText = 'width:44px;height:44px;padding:0;border-radius:50%;border:none;background:none !important;cursor:pointer;flex:0 0 auto;outline:none;';
+                const nextEpIcon = document.createElement('span');
+                nextEpIcon.textContent = '⏭';
+                nextEpIcon.style.cssText = 'font-size:16px;color:#fff;transition:opacity 0.2s ease;display:inline-block;';
+                nextEpBtn.appendChild(nextEpIcon);
+                nextEpBtn.addEventListener('mouseenter', () => { nextEpIcon.style.opacity = '0.65'; });
+                nextEpBtn.addEventListener('mouseleave', () => { nextEpIcon.style.opacity = '1'; });
+                nextEpBtn.addEventListener('click', () => {
+                    this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_NEXT);
+                });
+
+                fsBtn.before(prevEpBtn);
                 fsBtn.before(autoplayBtn);
+                fsBtn.before(nextEpBtn);
                 fsBtn.replaceWith(newFsBtn);
 
                 const toggleSettingsPane = (ev) => {
@@ -2865,6 +3047,20 @@
                         case IframeMessenger.messages.AUTOPLAY_NEXT: {
                             try {
                                 await this.goToNextVideo();
+                            } catch (e) {
+                                console.error(e);
+
+                                Notiflixx.notify.warning(
+                                    `${GM_info.script.name}: ${i18n.autoplayError}`
+                                );
+                            }
+
+                            break;
+                        }
+
+                        case IframeMessenger.messages.AUTOPLAY_PREV: {
+                            try {
+                                await this.goToPreviousVideo();
                             } catch (e) {
                                 console.error(e);
 
@@ -3014,6 +3210,18 @@
 
                         case IframeMessenger.messages.UPDATE_CORE_SETTINGS: {
                             coreSettings.update();
+                            mainSettings.update();
+                            const visitedStyleEl = document.getElementById('aw-visited-color-style');
+                            if (visitedStyleEl) {
+                                const newColor = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+                                visitedStyleEl.textContent = visitedStyleEl.textContent.replace(
+                                    /background: (#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)) !important/,
+                                    `background: ${newColor} !important`
+                                ).replace(
+                                    /background: (#[0-9a-fA-F]{3,8}|rgba?\([^)]+\));/,
+                                    `background: ${newColor};`
+                                );
+                            }
                             break;
                         }
 
@@ -3376,6 +3584,184 @@
             }
         }
 
+        async goToPreviousVideo() {
+            const Q = TopScopeInterface.queries;
+            const newStoLayout = isNewStoLayout();
+
+            let prevEpisodeHref = null;
+
+            if (newStoLayout) {
+                const prevLinks = [...document.querySelectorAll('a.btn-link[href*="episode"]')];
+                const prevLink = prevLinks.find(link => link.textContent.includes('←'));
+
+                if (prevLink) {
+                    prevEpisodeHref = prevLink.href;
+                } else {
+                    // Try to find previous season's last episode
+                    const seasonPills = [...document.querySelectorAll('[data-season-pill]')];
+                    const currentSeasonPill = seasonPills.find(el => el.classList.contains('bg-primary'));
+                    const currentIndex = seasonPills.indexOf(currentSeasonPill);
+
+                    if (currentIndex > 0) {
+                        const prevSeasonHref = seasonPills[currentIndex - 1].href;
+                        const prevSeasonHtml = await (await fetch(prevSeasonHref)).text();
+                        const prevSeasonDom = (new DOMParser()).parseFromString(prevSeasonHtml, 'text/html');
+                        const episodeLinks = [...prevSeasonDom.querySelectorAll('#episode-nav .nav-link')];
+                        const lastEpisodeLink = episodeLinks[episodeLinks.length - 1];
+                        if (lastEpisodeLink) {
+                            prevEpisodeHref = lastEpisodeLink.href;
+                        }
+                    }
+                }
+            } else {
+                // Old aniworld.to / legacy S.to layout
+                const [seasonsNav, episodesNav] = document.querySelectorAll(`${Q.navLinksContainer} > ul`);
+                const episodesNavLinks = [...episodesNav.querySelectorAll('a')];
+                const seasonNavLinks = [...seasonsNav.querySelectorAll('a')];
+                const currentEpisodeIndex = episodesNavLinks.findIndex(el => el.classList.contains('active'));
+                const currentSeasonIndex = seasonNavLinks.findIndex(el => el.classList.contains('active'));
+
+                if (currentEpisodeIndex > 0) {
+                    prevEpisodeHref = episodesNavLinks[currentEpisodeIndex - 1].href;
+                } else if (currentSeasonIndex > 0) {
+                    const prevSeasonHref = seasonNavLinks[currentSeasonIndex - 1].href;
+                    const prevSeasonHtml = await (await fetch(prevSeasonHref)).text();
+                    const prevSeasonDom = (new DOMParser()).parseFromString(prevSeasonHtml, 'text/html');
+                    const prevEpisodeLinks = [...prevSeasonDom.querySelectorAll(
+                        `${Q.navLinksContainer} > ul a[data-episode-id]`
+                    )];
+                    const lastEpisodeLink = prevEpisodeLinks[prevEpisodeLinks.length - 1];
+                    if (lastEpisodeLink) prevEpisodeHref = lastEpisodeLink.href;
+                }
+            }
+
+            // Already at the first episode
+            if (!prevEpisodeHref) return;
+            const prevEpisodeHtml = await (await fetch(prevEpisodeHref)).text();
+            const prevEpisodeDom = (new DOMParser()).parseFromString(prevEpisodeHtml, 'text/html');
+
+            if (newStoLayout) {
+                const elementsToUpdate = [
+                    '#player-meta',
+                    '#episode-links',
+                    '#episode-nav',
+                    'h1.h2.fw-bold',
+                    'h2.h4.mb-1',
+                    '.background-1.border-radius-top-1',
+                ];
+
+                elementsToUpdate.forEach((query) => {
+                    const currentElement = document.querySelector(query);
+                    const newElement = prevEpisodeDom.querySelector(query);
+                    if (currentElement && newElement) {
+                        currentElement.outerHTML = newElement.outerHTML;
+                    }
+                });
+            } else {
+                ([
+                    'div#wrapper > div.seriesContentBox > div.container.marginBottom > ul',
+                    'div#wrapper > div.seriesContentBox > div.container.marginBottom > div.cf',
+                    'div.changeLanguageBox',
+                    `${Q.episodeTitle} > ul`,
+                    Q.animeTitle,
+                    Q.episodeTitle,
+                    Q.navLinksContainer,
+                    Q.providersList,
+                ]).forEach((query) => {
+                    const currentElement = document.querySelector(query);
+                    const newElement = prevEpisodeDom.querySelector(query);
+
+                    if (currentElement && newElement) {
+                        currentElement.outerHTML = newElement.outerHTML;
+                    }
+                });
+            }
+
+            document.title = prevEpisodeDom.title;
+            history.pushState({}, '', prevEpisodeHref);
+
+            try {
+                if (newStoLayout) {
+                    this.setupNewStoProviderHandlers();
+
+                    const allNewStoButtons = [...document.querySelectorAll('#episode-links .link-box')];
+                    const prevVideoHref = allNewStoButtons[0]?.dataset.playUrl || null;
+
+                    if (!prevVideoHref) throw new Error('Embedded providers are missing or not supported');
+
+                    document.querySelector('#player-iframe').src = prevVideoHref;
+                    console.log('[Autoplay] Successfully changed iframe src to:', prevVideoHref);
+                } else {
+                    (function repairWebsiteFeatures() {
+                        document.querySelectorAll(Q.providerChangeBtn).forEach((btn) => {
+                            btn.addEventListener('click', (ev) => {
+                                ev.preventDefault();
+                                const parent = btn.parentElement;
+                                const linkTarget = parent.getAttribute('data-link-target');
+                                const hosterTarget = parent.getAttribute('data-external-embed') === 'true';
+                                const fakePlayer = document.querySelector('.fakePlayer');
+                                const inSiteWebStream = document.querySelector('.inSiteWebStream');
+                                const iframe = inSiteWebStream.querySelector('iframe');
+                                if (hosterTarget) {
+                                    fakePlayer.style.display = 'block';
+                                    inSiteWebStream.style.display = 'inline-block';
+                                    iframe.style.display = 'none';
+                                } else {
+                                    fakePlayer.style.display = 'none';
+                                    inSiteWebStream.style.display = 'inline-block';
+                                    iframe.src = linkTarget;
+                                    iframe.style.display = 'inline-block';
+                                }
+                            });
+                        });
+                    }());
+
+                    const allOldProviderButtons = [...document.querySelectorAll(TopScopeInterface.queries.providerChangeBtn)];
+                    const prevVideoLink = allOldProviderButtons[0]?.firstElementChild;
+                    let prevVideoHref = prevVideoLink?.href;
+
+                    if (prevVideoHref) {
+                        const providerNameEl = prevVideoLink.querySelector(TopScopeInterface.queries.providerName);
+                        if (providerNameEl?.innerText === VIDEO_PROVIDERS_MAP.VOE) {
+                            const corsProxy = advancedSettings[ADVANCED_SETTINGS_MAP.corsProxy];
+                            if (corsProxy) {
+                                const redirectText = await (await fetch(corsProxy + prevVideoLink.href)).text();
+                                const match = /location\.href = '(https:\/\/.+)';/.exec(redirectText);
+                                if (match) prevVideoHref = match[1];
+                            }
+                        }
+                    }
+
+                    if (!prevVideoHref) throw new Error('Embedded providers are missing or not supported');
+
+                    try {
+                        document.querySelector(Q.playerIframe).src = prevVideoHref;
+                        console.log('[Autoplay] Successfully changed iframe src to:', prevVideoHref);
+                    } catch (iframeError) {
+                        console.error('[Autoplay] Error setting iframe src:', iframeError);
+                        throw iframeError;
+                    }
+                }
+            } catch (error) {
+                console.error('[Autoplay] Previous video navigation failed:', error);
+                GM_setValue('lastAutoplayError', {
+                    date: Date.now(),
+                    error: error.message
+                });
+                console.log('[Autoplay] Reloading page due to navigation error');
+
+                if (document.fullscreenElement) {
+                    document.exitFullscreen().then(() => {
+                        location.href = location.href;
+                    }).catch(() => {
+                        location.href = location.href;
+                    });
+                } else {
+                    location.href = location.href;
+                }
+            }
+        }
+
         // Setup click handlers for new S.to provider buttons
         setupNewStoProviderHandlers() {
             document.querySelectorAll('#episode-links .link-box').forEach((btn) => {
@@ -3438,22 +3824,24 @@
 
         // Recolor episodes links visited before, excluding the current or watched ones
         if (mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) {
+            const visitedColor = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+            const visitedStyleEl = document.createElement('style');
+            visitedStyleEl.id = 'aw-visited-color-style';
             if (newStoLayout) {
-                // New S.to layout - style for visited episode links
-                GM_addStyle(`
+                visitedStyleEl.textContent = `
       #episode-nav .nav-link:visited:not(.bg-primary) {
-        background: #ffdd00 !important;
+        background: ${visitedColor} !important;
         color: #000 !important;
       }
-      `);
+      `;
             } else {
-                // Old layout
-                GM_addStyle(`
+                visitedStyleEl.textContent = `
       div#stream.hosterSiteDirectNav a[data-episode-id]:visited:not([class]) {
-        background: #ffdd00;
+        background: ${visitedColor};
       }
-      `);
+      `;
             }
+            document.head.appendChild(visitedStyleEl);
         }
 
         // Wait for DOM
