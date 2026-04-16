@@ -385,10 +385,10 @@
         [ADVANCED_SETTINGS_MAP.fastForwardSizeS]: 10,
         [ADVANCED_SETTINGS_MAP.largeSkipCooldownMs]: 300,
         [ADVANCED_SETTINGS_MAP.playOnLargeSkip]: true,
-        [ADVANCED_SETTINGS_MAP.skipX]: 30,
-        [ADVANCED_SETTINGS_MAP.skipC]: 60,
-        [ADVANCED_SETTINGS_MAP.skipV]: 90,
-        [ADVANCED_SETTINGS_MAP.skipB]: 120,
+        [ADVANCED_SETTINGS_MAP.skipX]: 15,
+        [ADVANCED_SETTINGS_MAP.skipC]: 30,
+        [ADVANCED_SETTINGS_MAP.skipV]: 60,
+        [ADVANCED_SETTINGS_MAP.skipB]: 90,
     };
 
     // Can not handle nested objects
@@ -505,10 +505,10 @@
       }
       `);
         const notifyDefaultOptions = {
-            closeButton: true,
+            closeButton: false,
             messageMaxLength: 500,
             plainText: false,
-            position: 'right-bottom',
+            get position() { return getNotifyPosition(); },
             zindex: 3222222,
         };
         const reportDefaultOptions = {
@@ -591,6 +591,11 @@
         });
     }
     applyNotiflixTheme();
+
+    function getNotifyPosition() {
+        const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window);
+        return (isMobile && !!document.fullscreenElement) ? 'right-top' : 'right-bottom';
+    }
 
     function detectHold(element, callback, {
         holdTimeMs = 700,
@@ -2233,6 +2238,7 @@
             // PREFERENCES TAB
             // ============================================
             const preferencesTab = panel.querySelector('#aw-tab-preferences');
+            const advancedTab = panel.querySelector('#aw-tab-advanced');
 
             // Skip Settings Section
             const { section: skipSettingsSection, card: skipSettingsCard } = createSection('clock', 'Skip Settings', 'skip');
@@ -2255,7 +2261,7 @@
                     coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] = v;
                 })
             ));
-            preferencesTab.appendChild(skipSettingsSection);
+            advancedTab.appendChild(skipSettingsSection);
 
             // Auto Skip Section
             const { section: autoSkipSection, card: autoSkipCard } = createSection('forward', 'Auto Skip', 'autoSkip');
@@ -2266,7 +2272,7 @@
                     coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart] = v;
                 })
             ));
-            preferencesTab.appendChild(autoSkipSection);
+            advancedTab.appendChild(autoSkipSection);
 
             // Playback Section
             const { section: playbackSection, card: playbackCard } = createSection('play', 'Playback', 'playback');
@@ -2277,7 +2283,7 @@
                     mainSettings[MAIN_SETTINGS_MAP.shouldAutoplayMuted] = v;
                 })
             ));
-            preferencesTab.appendChild(playbackSection);
+            advancedTab.appendChild(playbackSection);
 
             // Appearance Section - Enhanced Theme System
             const { section: appearanceSection, card: appearanceCard } = createSection('paint-brush', 'Appearance', 'appearance');
@@ -2302,7 +2308,7 @@
             );
             appearanceCard.appendChild(themeRow);
 
-            preferencesTab.appendChild(appearanceSection);
+            advancedTab.appendChild(appearanceSection);
 
             // Defaults Section (moved from Advanced)
             const { section: defaultsSection, card: defaultsCard } = createSection('sliders-h', 'Defaults', 'defaults');
@@ -2332,12 +2338,11 @@
                     advancedSettings[ADVANCED_SETTINGS_MAP.fastForwardSizeS] = v;
                 })
             ));
-            preferencesTab.appendChild(defaultsSection);
+            advancedTab.appendChild(defaultsSection);
 
             // ============================================
             // ADVANCED TAB
             // ============================================
-            const advancedTab = panel.querySelector('#aw-tab-advanced');
 
             // Hotkeys Section
             const { section: hotkeysSection, card: hotkeysCard } = createSection('keyboard', i18n.hotkeys, 'hotkeys');
@@ -2400,7 +2405,7 @@
             });
             hotkeysSection.appendChild(hotkeysGuideBtn);
 
-            advancedTab.appendChild(hotkeysSection);
+            preferencesTab.appendChild(hotkeysSection);
 
             // Skip Durations Section
             const { section: skipDurationsSection, card: skipDurationsCard } = createSection('fast-forward', 'Skip Key Durations (X / C / V / B)', 'skipDurations');
@@ -2437,7 +2442,7 @@
                     advancedSettings[ADVANCED_SETTINGS_MAP.skipB] = v;
                 })
             ));
-            advancedTab.appendChild(skipDurationsSection);
+            preferencesTab.appendChild(skipDurationsSection);
 
             // Timing Section
             const { section: timingSection, card: timingCard } = createSection('clock', 'Timing', 'timing');
@@ -2718,7 +2723,7 @@
             const showSkipToast = (seconds, backward = false) => {
                 Notiflix.Notify.info(backward ? `⏮ -${seconds}s` : `⏭ +${seconds}s`, {
                     timeout: 1000,
-                    position: 'right-bottom',
+                    position: getNotifyPosition(),
                     closeButton: false,
                 });
             };
@@ -2730,6 +2735,41 @@
             keyboardJS.bind('alt + c', () => { player.currentTime -= SKIP_CONFIG.skipC; showSkipToast(SKIP_CONFIG.skipC, true); });
             keyboardJS.bind('alt + v', () => { player.currentTime -= SKIP_CONFIG.skipV; showSkipToast(SKIP_CONFIG.skipV, true); });
             keyboardJS.bind('alt + b', () => { player.currentTime -= SKIP_CONFIG.skipB; showSkipToast(SKIP_CONFIG.skipB, true); });
+
+            // ---- Mobile double-tap hotkeys (fullscreen only) ----
+            // Left 30%  → Alt+X (backward skip by skipX seconds)
+            // Middle 40% → no action (native player behavior)
+            // Right 30% → X (forward skip by skipX seconds)
+            let lastTapTime = 0;
+            document.addEventListener('touchend', (e) => {
+                if (!this.isInFullscreen) return;
+
+                const now = Date.now();
+                const timeDiff = now - lastTapTime;
+                const touch = e.changedTouches[0];
+
+                if (timeDiff > 50 && timeDiff < 300) {
+                    // Double tap confirmed
+                    const relativeX = touch.clientX / window.innerWidth;
+
+                    if (relativeX < 0.3) {
+                        // Left zone → backward skip (Alt+X equivalent)
+                        player.currentTime -= SKIP_CONFIG.skipX;
+                        showSkipToast(SKIP_CONFIG.skipX, true);
+                        e.preventDefault();
+                    } else if (relativeX > 0.7) {
+                        // Right zone → forward skip (X equivalent)
+                        player.currentTime += SKIP_CONFIG.skipX;
+                        showSkipToast(SKIP_CONFIG.skipX, false);
+                        e.preventDefault();
+                    }
+                    // Middle zone → no action
+
+                    lastTapTime = 0; // reset so triple-tap doesn't re-trigger
+                } else {
+                    lastTapTime = now;
+                }
+            }, { passive: false });
         }
 
         setupOutroSkipHandling(player) {
@@ -2762,7 +2802,7 @@
                         countdownEl.remove();
                         Notiflix.Notify.info('⏹ Autoplay cancelled', {
                             timeout: 1500,
-                            position: 'right-bottom',
+                            position: getNotifyPosition(),
                             closeButton: false,
                         });
                     };

@@ -19,6 +19,7 @@ A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:
 - **Settings panel** — right-click the autoplay toggle button to open the settings UI
 - **VOE  player support**
 - **EN / DE localization**
+- **Doubletap to Skip on Mobile in Fullscreen** - doubletap right triger hotkey X / left trigger alt + X 
 
 ---
 
@@ -35,14 +36,14 @@ A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:
 
 ## Usage
 
-| Action | How |
-|--------|-----|
-| Toggle autoplay on/off | Click the **toggle button** in the video player |
-| Open settings | **Right-click** the toggle button |
-| Fast forward / rewind | `→` / `←` (default, configurable) |
-| Fullscreen | `F` (default, configurable) |
+| Action | How                                                |
+|--------|----------------------------------------------------|
+| Toggle autoplay on/off | Click the **toggle button** in the video player    |
+| Open settings | **Right-click** the toggle button                  |
+| Fast forward / rewind | `→` / `←` (default, configurable)                  |
+| Fullscreen | `F` (default, configurable)                        |
 | Intro skip | Configurable hotkey in settings (empty by default) |
-| Quick skips | `X` = +30s, `C` = +60s, `V` = +90s, `B` = +120s |
+| Quick skips | `X` = +15s, `C` = +30s, `V` = +60s, `B` = +90s     |
 
 ---
 
@@ -96,7 +97,12 @@ That said, feel free to:
 I'll have a look when I find the time.
 
 ---
+## Known Bugs 
 
+- if you open settings on mobile(i only tied fire fox) and u try to change a skip duration it will crash. 
+
+
+---
 ## License
 
 [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html)
