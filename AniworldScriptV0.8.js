@@ -10,7 +10,7 @@
 // @match            http://186.2.175.5/*
 // @match            *://*/*
 // @author           AniPlayer
-// @namespace        https://greasyfork.org/users/1400386
+// @namespace        SaosOne
 // @license          GPL-3.0-or-later; https://spdx.org/licenses/GPL-3.0-or-later.html
 // @icon             https://cdn.iconscout.com/icon/premium/png-512-thumb/monkey-icon-svg-download-png-2299128.png?f=webp&w=256
 // @require          https://cdnjs.cloudflare.com/ajax/libs/keyboardjs/2.7.0/keyboard.min.js#sha512-UrxaOZAJw5p38NProL/UrffryqdMdXFcEdyLt6eU89pH0N7KnmAe8G3ghNbH1qW5cDYdnaoEw1TcbHn8wuqAvw==
