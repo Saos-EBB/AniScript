@@ -2745,10 +2745,21 @@
                     let secondsLeft = 5;
                     let cancelled = false;
 
+                    const countdownEl = document.createElement('div');
+                    countdownEl.style.cssText = [
+                        'position:fixed', 'bottom:12px', 'right:12px', 'z-index:9999999',
+                        'padding:10px 16px', 'border-radius:8px',
+                        'background:#1e293b', 'color:#fff', 'font-size:14px', 'font-family:inherit',
+                        'box-shadow:0 4px 12px rgba(0,0,0,0.3)', 'pointer-events:none',
+                    ].join(';');
+                    countdownEl.textContent = `⏭ Next episode in ${secondsLeft}...`;
+                    document.body.appendChild(countdownEl);
+
                     const cancelFn = () => {
                         cancelled = true;
                         activeAutoplayCancelFn = null;
                         clearInterval(ticker);
+                        countdownEl.remove();
                         Notiflix.Notify.info('⏹ Autoplay cancelled', {
                             timeout: 1500,
                             position: 'right-bottom',
@@ -2757,26 +2768,18 @@
                     };
                     activeAutoplayCancelFn = cancelFn;
 
-                    const showCountdown = (n) => {
-                        Notiflix.Notify.info(`⏭ Next episode in ${n}...`, {
-                            timeout: 1100,
-                            position: 'right-bottom',
-                            closeButton: false,
-                        });
-                    };
-
-                    showCountdown(secondsLeft);
                     const ticker = setInterval(() => {
                         if (cancelled) { clearInterval(ticker); return; }
                         secondsLeft--;
                         if (secondsLeft <= 0) {
                             clearInterval(ticker);
                             activeAutoplayCancelFn = null;
+                            countdownEl.remove();
                             if (!cancelled) {
                                 this.messenger.sendMessage(IframeMessenger.messages.AUTOPLAY_NEXT);
                             }
                         } else {
-                            showCountdown(secondsLeft);
+                            countdownEl.textContent = `⏭ Next episode in ${secondsLeft}...`;
                         }
                     }, 1000);
                 }
