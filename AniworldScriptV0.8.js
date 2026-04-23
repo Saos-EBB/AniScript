@@ -336,7 +336,6 @@
     const HOTKEYS_SETTINGS_MAP = {
         fastBackward: 'fastBackward',
         fastForward: 'fastForward',
-        fullscreen: 'fullscreen',
         largeSkip: 'largeSkip',
         prevEpisode: 'prevEpisode',
         nextEpisode: 'nextEpisode',
@@ -346,7 +345,6 @@
     const HOTKEYS_SETTINGS_DEFAULTS = {
         [HOTKEYS_SETTINGS_MAP.fastBackward]: 'left',
         [HOTKEYS_SETTINGS_MAP.fastForward]: 'right',
-        [HOTKEYS_SETTINGS_MAP.fullscreen]: 'f',
         [HOTKEYS_SETTINGS_MAP.largeSkip]: '',
         [HOTKEYS_SETTINGS_MAP.prevEpisode]: '',
         [HOTKEYS_SETTINGS_MAP.nextEpisode]: '',
@@ -454,6 +452,70 @@
     ].forEach(([settings, defaults]) => {
         Object.entries(defaults).forEach(([key, value]) => (settings[key] ??= value));
     });
+
+    const WATCH_PROGRESS_THRESHOLD = 0.8;
+
+    const getWatchProgress = () => {
+        try { return JSON.parse(GM_getValue('watchProgress') || '{}'); } catch { return {}; }
+    };
+
+    const saveWatchProgress = (data) => {
+        GM_setValue('watchProgress', JSON.stringify(data));
+    };
+
+    const applyEpisodeProgress = (episodeId, progress) => {
+        const link = document.querySelector(`a[data-episode-id="${episodeId}"]`);
+        if (!link) return;
+        const color = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+        if (!mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) {
+            link.style.background = '';
+            return;
+        }
+        const pct = Math.round(progress * 100);
+        if (pct <= 0) {
+            link.style.background = '';
+        } else {
+            link.style.background = `linear-gradient(to right, ${color} ${pct}%, transparent ${pct}%)`;
+        }
+    };
+
+    const applyAllEpisodeProgress = () => {
+        if (!mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) return;
+        const data = getWatchProgress();
+        Object.entries(data).forEach(([episodeId, progress]) => {
+            applyEpisodeProgress(episodeId, progress);
+        });
+        applyAllSeasonProgress();
+    };
+
+    const applySeasonProgress = (seasonLink, seasonId) => {
+        if (!mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) {
+            seasonLink.style.background = '';
+            return;
+        }
+        const episodeLinks = [...document.querySelectorAll(`a[data-season-id="${seasonId}"]`)];
+        if (!episodeLinks.length) return;
+        const data = getWatchProgress();
+        const watched = episodeLinks.filter(el => {
+            const p = data[el.dataset.episodeId] || 0;
+            return p >= WATCH_PROGRESS_THRESHOLD;
+        }).length;
+        const pct = Math.round((watched / episodeLinks.length) * 100);
+        const color = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+        seasonLink.style.background = pct <= 0
+            ? ''
+            : `linear-gradient(to right, ${color} ${pct}%, transparent ${pct}%)`;
+    };
+
+    const applyAllSeasonProgress = () => {
+        if (!mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) return;
+        const currentSeasonLink = document.querySelector('div#stream > ul:first-child a.active');
+        if (!currentSeasonLink) return;
+        const seasonId = document.querySelector('a[data-season-id]')?.dataset.seasonId;
+        if (!seasonId) return;
+        applySeasonProgress(currentSeasonLink, seasonId);
+    };
+
     // -------------------------------------- /utils ---------------------------------------------
 
     const Notiflixx = (() => {
@@ -586,7 +648,7 @@
             successColor: vars.accentGreen,
             warningColor: '#f59e0b',
             failureColor: '#ef4444',
-            infoColor: vars.accentPrimary,
+            infoColor: '#6b6b8a',
             fontFamily: vars.fontFamily,
         });
     }
@@ -951,11 +1013,10 @@
                 AUTOPLAY_NEXT: 'AUTOPLAY_NEXT',
                 AUTOPLAY_PREV: 'AUTOPLAY_PREV',
                 REQUEST_CURRENT_FRANCHISE_DATA: 'REQUEST_CURRENT_FRANCHISE_DATA',
-                REQUEST_FULLSCREEN_STATE: 'REQUEST_FULLSCREEN_STATE',
                 OPEN_HOTKEYS_GUIDE: 'OPEN_HOTKEYS_GUIDE',
-                TOGGLE_FULLSCREEN: 'TOGGLE_FULLSCREEN',
                 TOP_NOTIFLIX_REPORT_INFO: 'TOP_NOTIFLIX_REPORT_INFO',
                 UPDATE_CORE_SETTINGS: 'UPDATE_CORE_SETTINGS',
+                UPDATE_EPISODE_PROGRESS: 'UPDATE_EPISODE_PROGRESS',
             };
         }
 
@@ -988,11 +1049,10 @@
             this.commLink.registerSendCommand(IframeMessenger.messages.AUTOPLAY_NEXT);
             this.commLink.registerSendCommand(IframeMessenger.messages.AUTOPLAY_PREV);
             this.commLink.registerSendCommand(IframeMessenger.messages.REQUEST_CURRENT_FRANCHISE_DATA);
-            this.commLink.registerSendCommand(IframeMessenger.messages.REQUEST_FULLSCREEN_STATE);
             this.commLink.registerSendCommand(IframeMessenger.messages.OPEN_HOTKEYS_GUIDE);
-            this.commLink.registerSendCommand(IframeMessenger.messages.TOGGLE_FULLSCREEN);
             this.commLink.registerSendCommand(IframeMessenger.messages.TOP_NOTIFLIX_REPORT_INFO);
             this.commLink.registerSendCommand(IframeMessenger.messages.UPDATE_CORE_SETTINGS);
+            this.commLink.registerSendCommand(IframeMessenger.messages.UPDATE_EPISODE_PROGRESS);
         }
 
         registerConnectionListener(callback) {
@@ -1013,7 +1073,6 @@
             this.currentFranchiseId = null;
             this.currentVideoId = null;
             this.ignoreMissingFranchiseOnce = true;
-            this.isInFullscreen = null;
             this.messenger = messenger;
             this.topScopeDomainId = '';
             coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] = (
@@ -1048,14 +1107,6 @@
                                 this.ignoreMissingFranchiseOnce = false;
                             }
 
-                            break;
-                        }
-
-                        case TopScopeInterface.messages.FULLSCREEN_STATE: {
-                            this.isInFullscreen = packet.data.isInFullscreen;
-                            this.updateFullscreenBtn({
-                                isInFullscreen: this.isInFullscreen
-                            });
                             break;
                         }
 
@@ -2361,13 +2412,6 @@
                 })
             ));
             hotkeysCard.appendChild(createSettingRow(
-                i18n.fullscreen,
-                i18n.fullscreenTooltip,
-                createTextInput('fullscreen', hotkeysSettings[HOTKEYS_SETTINGS_MAP.fullscreen], (v) => {
-                    hotkeysSettings[HOTKEYS_SETTINGS_MAP.fullscreen] = v.toLowerCase();
-                })
-            ));
-            hotkeysCard.appendChild(createSettingRow(
                 i18n.largeSkip,
                 i18n.largeSkipTooltip,
                 createTextInput('largeSkip', hotkeysSettings[HOTKEYS_SETTINGS_MAP.largeSkip], (v) => {
@@ -2665,13 +2709,6 @@
                 });
             }
 
-            if (hotkeysSettings[HOTKEYS_SETTINGS_MAP.fullscreen]) {
-                keyboardJS.bind(hotkeysSettings[HOTKEYS_SETTINGS_MAP.fullscreen], (ev) => {
-                    ev.preventRepeat();
-                    this.messenger.sendMessage(IframeMessenger.messages.TOGGLE_FULLSCREEN);
-                });
-            }
-
             if (hotkeysSettings[HOTKEYS_SETTINGS_MAP.largeSkip]) {
                 const cooldownTime = advancedSettings[ADVANCED_SETTINGS_MAP.largeSkipCooldownMs];
                 let lastSkipTime = 0;
@@ -2723,8 +2760,9 @@
             const showSkipToast = (seconds, backward = false) => {
                 Notiflix.Notify.info(backward ? `⏮ -${seconds}s` : `⏭ +${seconds}s`, {
                     timeout: 1000,
-                    position: getNotifyPosition(),
+                    position: 'right-bottom',
                     closeButton: false,
+                    zindex: 3222222,
                 });
             };
             keyboardJS.bind('x', () => { player.currentTime += SKIP_CONFIG.skipX; showSkipToast(SKIP_CONFIG.skipX); });
@@ -2742,7 +2780,7 @@
             // Right 30% → X (forward skip by skipX seconds)
             let lastTapTime = 0;
             document.addEventListener('touchend', (e) => {
-                if (!this.isInFullscreen) return;
+                if (!document.fullscreenElement) return;
 
                 const now = Date.now();
                 const timeDiff = now - lastTapTime;
@@ -2945,6 +2983,20 @@
             });
             this.handleAutoplay(player);
 
+            // Progress tracking — report to top scope every 5s while playing
+            let lastProgressReport = 0;
+            player.addEventListener('timeupdate', () => {
+                const now = Date.now();
+                if (now - lastProgressReport < 5000) return;
+                if (!player.duration || isNaN(player.duration)) return;
+                const progress = player.currentTime / player.duration;
+                if (progress <= 0) return;
+                lastProgressReport = now;
+                this.messenger.sendMessage(IframeMessenger.messages.UPDATE_EPISODE_PROGRESS, {
+                    progress: Math.min(progress, 1.0),
+                });
+            });
+
             // Attach autoplay button and change fullscreen button behavior...
             waitForElement(VOEJWPIframeInterface.queries.fullscreenBtn, {
                 existing: true,
@@ -2952,7 +3004,6 @@
             }, (fsBtn) => {
                 fsBtn = fsBtn.parentElement;
 
-                const newFsBtn = fsBtn.cloneNode(true);
                 const autoplayBtn = this.createAutoplayButton();
                 const settingsPane = this.settingsPane = this.createSettingsPane();
 
@@ -2993,7 +3044,6 @@
                 fsBtn.before(prevEpBtn);
                 fsBtn.before(autoplayBtn);
                 fsBtn.before(nextEpBtn);
-                fsBtn.replaceWith(newFsBtn);
 
                 const toggleSettingsPane = (ev) => {
                     ev?.preventDefault();
@@ -3004,25 +3054,9 @@
                     return false;
                 };
                 autoplayBtn.oncontextmenu = toggleSettingsPane;
-
-
-                newFsBtn.addEventListener('click', () => {
-                    this.messenger.sendMessage(IframeMessenger.messages.TOGGLE_FULLSCREEN);
-                });
-                this.messenger.sendMessage(IframeMessenger.messages.REQUEST_FULLSCREEN_STATE);
             });
         }
 
-        updateFullscreenBtn({
-                                isInFullscreen
-                            }) {
-            const fsBtn = document.querySelector(VOEJWPIframeInterface.queries.fullscreenBtn);
-            if (isInFullscreen) {
-                fsBtn.parentElement.classList.add('jw-off');
-            } else {
-                fsBtn.parentElement.classList.remove('jw-off');
-            }
-        }
     }
 
     class TopScopeInterface {
@@ -3039,7 +3073,6 @@
         static get messages() {
             return {
                 CURRENT_FRANCHISE_DATA: 'CURRENT_FRANCHISE_DATA',
-                FULLSCREEN_STATE: 'FULLSCREEN_STATE',
             };
         }
 
@@ -3159,6 +3192,8 @@
                                 title ? `${title}${releaseYear ? `::${releaseYear}` : ''}` : null
                             );
 
+                            this.currentVideoId = episodeId || null;
+
                             if (currentFranchiseId || episodeId) {
                                 this.commLink.commands[
                                     TopScopeInterface.messages.CURRENT_FRANCHISE_DATA
@@ -3174,13 +3209,6 @@
                                 });
                             }
 
-                            break;
-                        }
-
-                        case IframeMessenger.messages.REQUEST_FULLSCREEN_STATE: {
-                            this.commLink.commands[TopScopeInterface.messages.FULLSCREEN_STATE]({
-                                isInFullscreen: !!document.fullscreenElement,
-                            });
                             break;
                         }
 
@@ -3235,17 +3263,6 @@
                             break;
                         }
 
-                        case IframeMessenger.messages.TOGGLE_FULLSCREEN: {
-                            // Notice how this then triggers a listener from this.init()
-                            if (document.fullscreenElement) {
-                                await document.exitFullscreen();
-                            } else {
-                                await document.documentElement.requestFullscreen();
-                            }
-
-                            break;
-                        }
-
                         case IframeMessenger.messages.TOP_NOTIFLIX_REPORT_INFO: {
                             Notiflixx.notify.info(...packet.data.args);
                             break;
@@ -3254,17 +3271,19 @@
                         case IframeMessenger.messages.UPDATE_CORE_SETTINGS: {
                             coreSettings.update();
                             mainSettings.update();
-                            const visitedStyleEl = document.getElementById('aw-visited-color-style');
-                            if (visitedStyleEl) {
-                                const newColor = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
-                                visitedStyleEl.textContent = visitedStyleEl.textContent.replace(
-                                    /background: (#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)) !important/,
-                                    `background: ${newColor} !important`
-                                ).replace(
-                                    /background: (#[0-9a-fA-F]{3,8}|rgba?\([^)]+\));/,
-                                    `background: ${newColor};`
-                                );
-                            }
+                            break;
+                        }
+
+                        case IframeMessenger.messages.UPDATE_EPISODE_PROGRESS: {
+                            if (!this.currentVideoId) break;
+                            const { progress } = packet.data;
+                            const data = getWatchProgress();
+                            const episodeId = String(this.currentVideoId);
+                            if (data[episodeId] >= 1.0) break;
+                            data[episodeId] = progress >= WATCH_PROGRESS_THRESHOLD ? 1.0 : progress;
+                            saveWatchProgress(data);
+                            applyEpisodeProgress(episodeId, data[episodeId]);
+                            applyAllSeasonProgress();
                             break;
                         }
 
@@ -3300,12 +3319,9 @@
 
             await this.initCrossFrameConnection();
 
-            document.addEventListener('fullscreenchange', () => {
-                this.adaptFakeFullscreen();
-                this.commLink.commands[TopScopeInterface.messages.FULLSCREEN_STATE]({
-                    isInFullscreen: !!document.fullscreenElement,
-                });
-            });
+            this.setupEpisodeContextMenu();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            this.setupWatchedModal();
         }
 
         async initCrossFrameConnection() {
@@ -3344,97 +3360,12 @@
                 statusCheckInterval: advancedSettings[ADVANCED_SETTINGS_MAP.commlinkPollingIntervalMs],
             });
             this.commLink.registerSendCommand(TopScopeInterface.messages.CURRENT_FRANCHISE_DATA);
-            this.commLink.registerSendCommand(TopScopeInterface.messages.FULLSCREEN_STATE);
 
             this.commLink.registerListener(iframeId, this.handleIframeMessages.bind(this));
 
             this.isPendingConnection = false;
         }
 
-
-        adaptFakeFullscreen() {
-            const Q = TopScopeInterface.queries;
-            const hostersPlayerContainer = document.querySelector(Q.hostersPlayerContainer);
-            const playerIframe = document.querySelector(Q.playerIframe);
-
-            if (!hostersPlayerContainer || !playerIframe) return;
-
-            const newStoLayout = isNewStoLayout();
-
-            const isInFullscreen = !!document.fullscreenElement;
-            if (isInFullscreen) {
-                document.body.style.overflow = 'hidden';
-
-                if (newStoLayout) {
-                    // Hide the navbar and other fixed elements during fullscreen
-                    const navbar = document.querySelector('nav.navbar');
-                    if (navbar) {
-                        navbar.dataset.prevDisplay = navbar.style.display;
-                        navbar.style.display = 'none';
-                    }
-
-                    // New S.to layout - ensure container and iframe fill the screen
-                    hostersPlayerContainer.style.cssText = (
-                        'z-index: 2147483647 !important; position: fixed !important; ' +
-                        'top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; ' +
-                        'width: 100vw !important; height: 100vh !important; ' +
-                        'padding: 0 !important; margin: 0 !important; ' +
-                        'overflow: hidden !important; background: #000 !important;'
-                    );
-                    playerIframe.style.cssText = (
-                        'display: block !important; position: absolute !important; ' +
-                        'top: 0 !important; left: 0 !important; ' +
-                        'width: 100vw !important; height: 100vh !important; ' +
-                        'min-height: 100vh !important; min-width: 100vw !important; ' +
-                        'border: 0 !important; border-width: 0 !important;'
-                    );
-                    // Hide the loading overlay
-                    const loadingOverlay = document.querySelector('#player-loading');
-                    if (loadingOverlay) {
-                        loadingOverlay.style.display = 'none';
-                    }
-                } else {
-                    // Old layout
-                    playerIframe.style.setProperty('height', '100vh', 'important');
-                    if (hostersPlayerContainer.firstElementChild) {
-                        hostersPlayerContainer.firstElementChild.style.display = 'none';
-                    }
-                    hostersPlayerContainer.style.cssText = (
-                        'z-index: 100; position: fixed; top: 0; left: 0; padding: 0; height: 100vh; overflow-y: scroll; scrollbar-width: none;'
-                    );
-                }
-            } else {
-                document.body.style.overflow = '';
-
-                if (newStoLayout) {
-                    // Restore the navbar
-                    const navbar = document.querySelector('nav.navbar');
-                    if (navbar) {
-                        navbar.style.display = navbar.dataset.prevDisplay || '';
-                        delete navbar.dataset.prevDisplay;
-                    }
-
-                    // Reset new S.to layout styles - restore proper player dimensions
-                    hostersPlayerContainer.style.cssText = '';
-                    // Restore iframe to proper embedded size
-                    playerIframe.style.cssText = 'display: inline-block; min-height: 450px;';
-
-                    // Restore loading overlay
-                    const loadingOverlay = document.querySelector('#player-loading');
-                    if (loadingOverlay) {
-                        loadingOverlay.style.display = '';
-                    }
-                } else {
-                    // Reset old layout styles
-                    playerIframe.style.height = '';
-                    if (hostersPlayerContainer.firstElementChild) {
-                        hostersPlayerContainer.firstElementChild.style.display = '';
-                    }
-                    hostersPlayerContainer.scrollTop = 0;
-                    hostersPlayerContainer.style.cssText = '';
-                }
-            }
-        }
 
         async goToNextVideo() {
             const Q = TopScopeInterface.queries;
@@ -3535,6 +3466,11 @@
 
             document.title = nextEpisodeDom.title;
             history.pushState({}, '', nextEpisodeHref);
+            applyAllEpisodeProgress();
+            if (this.setupWatchedModal) {
+                const openBtn = document.getElementById('aw-open-watched-btn');
+                if (!openBtn) this.setupWatchedModal();
+            }
 
             try {
                 if (newStoLayout) {
@@ -3722,6 +3658,11 @@
 
             document.title = prevEpisodeDom.title;
             history.pushState({}, '', prevEpisodeHref);
+            applyAllEpisodeProgress();
+            if (this.setupWatchedModal) {
+                const openBtn = document.getElementById('aw-open-watched-btn');
+                if (!openBtn) this.setupWatchedModal();
+            }
 
             try {
                 if (newStoLayout) {
@@ -3843,6 +3784,417 @@
             });
         }
 
+        setupEpisodeContextMenu() {
+            const menu = document.createElement('div');
+            menu.id = 'aw-episode-menu';
+            menu.style.cssText = `
+                display: none;
+                position: fixed;
+                z-index: 999999;
+                background: #1a1a25;
+                border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 8px;
+                padding: 4px;
+                font-family: 'Space Grotesk', sans-serif;
+                font-size: 12px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+                min-width: 160px;
+            `;
+            document.body.appendChild(menu);
+
+            let targetEpisodeId = null;
+
+            const hideMenu = () => {
+                menu.style.display = 'none';
+                targetEpisodeId = null;
+            };
+
+            document.addEventListener('click', hideMenu);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
+
+            document.addEventListener('contextmenu', (e) => {
+                const link = e.target.closest('a[data-episode-id]');
+                if (!link) return;
+
+                e.preventDefault();
+                targetEpisodeId = link.dataset.episodeId;
+
+                const data = getWatchProgress();
+                const current = data[targetEpisodeId] || 0;
+                const isWatched = current >= 1.0;
+
+                menu.innerHTML = `
+                    <div id="aw-menu-toggle" style="
+                        padding: 6px 10px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        color: #f0f0f5;
+                        transition: background 0.15s ease;
+                    ">${isWatched ? '✗ Als ungesehen markieren' : '✓ Als gesehen markieren'}</div>
+                `;
+
+                menu.querySelector('#aw-menu-toggle').addEventListener('mouseenter', function() {
+                    this.style.background = 'rgba(255,255,255,0.06)';
+                });
+                menu.querySelector('#aw-menu-toggle').addEventListener('mouseleave', function() {
+                    this.style.background = '';
+                });
+                menu.querySelector('#aw-menu-toggle').addEventListener('click', () => {
+                    const data = getWatchProgress();
+                    if (isWatched) {
+                        delete data[targetEpisodeId];
+                    } else {
+                        data[targetEpisodeId] = 1.0;
+                    }
+                    saveWatchProgress(data);
+                    applyEpisodeProgress(targetEpisodeId, data[targetEpisodeId] || 0);
+                    hideMenu();
+                });
+
+                const x = Math.min(e.clientX, window.innerWidth - 180);
+                const y = Math.min(e.clientY, window.innerHeight - 60);
+                menu.style.left = x + 'px';
+                menu.style.top = y + 'px';
+                menu.style.display = 'block';
+            });
+        }
+
+        setupWatchedModal() {
+            // Inject styles
+            const style = document.createElement('style');
+            style.textContent = `
+        #aw-watched-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 999998;
+            backdrop-filter: blur(4px);
+        }
+        #aw-watched-overlay.active { display: block; }
+
+        #aw-watched-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 420px;
+            max-width: 95vw;
+            max-height: 85vh;
+            background: #0a0a0f;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            z-index: 999999;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            font-family: 'Space Grotesk', sans-serif;
+        }
+        #aw-watched-modal.active { display: flex; }
+
+        #aw-watched-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: #12121a;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        #aw-watched-modal-header span {
+            font-size: 13px;
+            font-weight: 600;
+            color: #f0f0f5;
+        }
+        #aw-watched-modal-close {
+            width: 26px;
+            height: 26px;
+            border: none;
+            background: #1a1a25;
+            border-radius: 6px;
+            color: #a0a0b8;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #aw-watched-modal-close:hover { color: #f0f0f5; }
+
+        #aw-watched-tabs {
+            display: flex;
+            background: #12121a;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        #aw-watched-tabs::-webkit-scrollbar { display: none; }
+
+        .aw-watched-tab {
+            padding: 7px 14px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #a0a0b8;
+            background: none;
+            border: none;
+            cursor: pointer;
+            white-space: nowrap;
+            position: relative;
+            font-family: inherit;
+            transition: color 0.15s;
+        }
+        .aw-watched-tab:hover { color: #f0f0f5; }
+        .aw-watched-tab.active { color: rgba(147,112,219,1); }
+        .aw-watched-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 20%; right: 20%;
+            height: 2px;
+            background: rgba(147,112,219,1);
+            border-radius: 2px 2px 0 0;
+        }
+        .aw-watched-tab.readonly {
+            opacity: 0.4;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        #aw-watched-modal-body {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        #aw-watched-modal-body::-webkit-scrollbar { width: 6px; }
+        #aw-watched-modal-body::-webkit-scrollbar-track { background: transparent; }
+        #aw-watched-modal-body::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.06);
+            border-radius: 3px;
+        }
+
+        #aw-watched-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+            gap: 6px;
+        }
+
+        .aw-watched-cell {
+            aspect-ratio: 1;
+            border-radius: 7px;
+            border: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            color: #f0f0f5;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+            background: #12121a;
+            user-select: none;
+        }
+        .aw-watched-cell:hover {
+            border-color: rgba(255,255,255,0.2);
+            transform: scale(1.05);
+        }
+        .aw-watched-cell .aw-cell-number {
+            position: relative;
+            z-index: 1;
+        }
+        .aw-watched-cell .aw-cell-fill {
+            position: absolute;
+            inset: 0;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        #aw-watched-modal-footer {
+            padding: 10px 14px;
+            background: #12121a;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        #aw-reset-season-btn {
+            padding: 6px 12px;
+            font-size: 11px;
+            font-family: inherit;
+            font-weight: 500;
+            background: rgba(239,68,68,0.1);
+            border: 1px solid rgba(239,68,68,0.3);
+            border-radius: 6px;
+            color: #ef4444;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        #aw-reset-season-btn:hover {
+            background: rgba(239,68,68,0.2);
+            border-color: rgba(239,68,68,0.5);
+        }
+
+        #aw-open-watched-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #a0a0b8;
+            font-size: 15px;
+            padding: 0 4px;
+            margin-left: 6px;
+            vertical-align: middle;
+            transition: color 0.15s;
+            line-height: 1;
+        }
+        #aw-open-watched-btn:hover { color: #f0f0f5; }
+    `;
+            document.head.appendChild(style);
+
+            // Build modal DOM
+            const overlay = document.createElement('div');
+            overlay.id = 'aw-watched-overlay';
+
+            const modal = document.createElement('div');
+            modal.id = 'aw-watched-modal';
+
+            modal.innerHTML = `
+        <div id="aw-watched-modal-header">
+            <span>Episode Manager</span>
+            <button id="aw-watched-modal-close">✕</button>
+        </div>
+        <div id="aw-watched-tabs"></div>
+        <div id="aw-watched-modal-body">
+            <div id="aw-watched-grid"></div>
+        </div>
+        <div id="aw-watched-modal-footer">
+            <button id="aw-reset-season-btn">↺ Staffel zurücksetzen</button>
+        </div>
+    `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+
+            const closeModal = () => {
+                modal.classList.remove('active');
+                overlay.classList.remove('active');
+            };
+
+            modal.querySelector('#aw-watched-modal-close').addEventListener('click', closeModal);
+            overlay.addEventListener('click', closeModal);
+
+            // Reset button with Notiflix confirm
+            modal.querySelector('#aw-reset-season-btn').addEventListener('click', () => {
+                Notiflix.Confirm.show(
+                    'Staffel zurücksetzen',
+                    'Möchtest du den Watched-Status aller Episoden dieser Staffel wirklich löschen?',
+                    'Ja, zurücksetzen',
+                    'Abbrechen',
+                    () => {
+                        const episodeLinks = [...document.querySelectorAll('a[data-episode-id]')];
+                        const data = getWatchProgress();
+                        episodeLinks.forEach(link => {
+                            delete data[link.dataset.episodeId];
+                            link.style.background = '';
+                        });
+                        saveWatchProgress(data);
+                        applyAllSeasonProgress();
+                        this.renderWatchedGrid();
+                    },
+                    () => {},
+                    {
+                        zindex: 9999999,
+                        titleColor: '#ef4444',
+                        okButtonBackground: '#ef4444',
+                        borderRadius: '8px',
+                    }
+                );
+            });
+
+            // Build season tabs
+            const tabsContainer = modal.querySelector('#aw-watched-tabs');
+            const seasonLinks = [...document.querySelectorAll('div#stream > ul:first-child a[href*="/staffel-"], div#stream > ul:first-child a[href*="/filme"]')];
+            const currentSeasonId = document.querySelector('a[data-season-id]')?.dataset.seasonId;
+
+            seasonLinks.forEach((link) => {
+                const tab = document.createElement('button');
+                tab.className = 'aw-watched-tab';
+                tab.textContent = link.textContent.trim();
+                const isActive = link.classList.contains('active');
+                if (!isActive) tab.classList.add('readonly');
+                if (isActive) {
+                    tab.classList.add('active');
+                    tab.dataset.seasonId = currentSeasonId;
+                }
+                tabsContainer.appendChild(tab);
+            });
+
+            this.renderWatchedGrid = () => {
+                const grid = modal.querySelector('#aw-watched-grid');
+                grid.innerHTML = '';
+                const data = getWatchProgress();
+                const color = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
+                const episodeLinks = [...document.querySelectorAll('a[data-episode-id]')];
+
+                episodeLinks.forEach((epLink) => {
+                    const episodeId = epLink.dataset.episodeId;
+                    const epNum = epLink.textContent.trim();
+                    const progress = data[episodeId] || 0;
+                    const pct = Math.round(progress * 100);
+
+                    const cell = document.createElement('div');
+                    cell.className = 'aw-watched-cell';
+                    cell.title = `Episode ${epNum} — ${pct}%`;
+                    cell.innerHTML = `
+                <div class="aw-cell-fill"></div>
+                <span class="aw-cell-number">${epNum}</span>
+            `;
+
+                    const fill = cell.querySelector('.aw-cell-fill');
+                    fill.style.background = color;
+                    // Defer to allow transition
+                    requestAnimationFrame(() => {
+                        fill.style.width = pct + '%';
+                    });
+
+                    cell.addEventListener('click', () => {
+                        const current = data[episodeId] || 0;
+                        if (current >= 1.0) {
+                            delete data[episodeId];
+                            fill.style.width = '0%';
+                            cell.title = `Episode ${epNum} — 0%`;
+                            epLink.style.background = '';
+                        } else {
+                            data[episodeId] = 1.0;
+                            fill.style.width = '100%';
+                            cell.title = `Episode ${epNum} — 100%`;
+                            applyEpisodeProgress(episodeId, 1.0);
+                        }
+                        saveWatchProgress(data);
+                        applyAllSeasonProgress();
+                    });
+
+                    grid.appendChild(cell);
+                });
+            };
+
+            // Open button next to "Episoden:" label
+            const episodesLabel = [...document.querySelectorAll('div#stream ul li span')]
+                .find(el => el.textContent.includes('Episoden'));
+            if (episodesLabel) {
+                const openBtn = document.createElement('button');
+                openBtn.id = 'aw-open-watched-btn';
+                openBtn.title = 'Episode Manager öffnen';
+                openBtn.textContent = '⊞';
+                openBtn.addEventListener('click', () => {
+                    this.renderWatchedGrid();
+                    modal.classList.add('active');
+                    overlay.classList.add('active');
+                });
+                episodesLabel.appendChild(openBtn);
+            }
+        }
+
         unregisterCommlinkListener() {
             if (!this.currentIframeId) return;
             this.commLink.listeners = this.commLink.listeners.filter((listener) => {
@@ -3865,28 +4217,6 @@
 
         const newStoLayout = isNewStoLayout();
 
-        // Recolor episodes links visited before, excluding the current or watched ones
-        if (mainSettings[MAIN_SETTINGS_MAP.highlightVisitedEpisodes]) {
-            const visitedColor = mainSettings[MAIN_SETTINGS_MAP.visitedEpisodeColor];
-            const visitedStyleEl = document.createElement('style');
-            visitedStyleEl.id = 'aw-visited-color-style';
-            if (newStoLayout) {
-                visitedStyleEl.textContent = `
-      #episode-nav .nav-link:visited:not(.bg-primary) {
-        background: ${visitedColor} !important;
-        color: #000 !important;
-      }
-      `;
-            } else {
-                visitedStyleEl.textContent = `
-      div#stream.hosterSiteDirectNav a[data-episode-id]:visited:not([class]) {
-        background: ${visitedColor};
-      }
-      `;
-            }
-            document.head.appendChild(visitedStyleEl);
-        }
-
         // Wait for DOM
         await new Promise((resolve) => {
             if (['complete'].includes(document.readyState)) {
@@ -3897,6 +4227,7 @@
                 });
             }
         });
+        applyAllEpisodeProgress();
         try {
             const lastAutoplayError = GM_getValue('lastAutoplayError');
             if (lastAutoplayError && ((Date.now() - lastAutoplayError.date) <= (60 * 1000))) {

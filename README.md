@@ -12,14 +12,13 @@ A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:
 - **Intro skip** — one-press hotkey to jump past the intro (configurable skip size)
 - **Fast forward / rewind hotkeys** — keyboard shortcuts for seeking
 - **Skip to next / previous Episode** - keyboard shortcuts for skipping
-- **Fullscreen hotkey** — toggle fullscreen via keyboard
 - **Highlight visited episodes** — previously opened episodes are marked in yellow
 - **Muted autoplay fallback** — if the browser blocks autoplay, the video starts muted and unmutes on first interaction
 - **Seamless episode navigation** — next episode loads without a full page reload
 - **Settings panel** — right-click the autoplay toggle button to open the settings UI
 - **VOE  player support**
 - **EN / DE localization**
-- **Doubletap to Skip on Mobile in Fullscreen** - doubletap right triger hotkey X / left trigger alt + X 
+- **Doubletap to Skip on Mobile** - doubletap right trigger hotkey X / left trigger alt + X
 
 ---
 
@@ -41,7 +40,6 @@ A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https:
 | Toggle autoplay on/off | Click the **toggle button** in the video player    |
 | Open settings | **Right-click** the toggle button                  |
 | Fast forward / rewind | `→` / `←` (default, configurable)                  |
-| Fullscreen | `F` (default, configurable)                        |
 | Intro skip | Configurable hotkey in settings (empty by default) |
 | Quick skips | `X` = +15s, `C` = +30s, `V` = +60s, `B` = +90s     |
 
@@ -59,7 +57,7 @@ Open the settings panel by **right-clicking** the autoplay toggle button in the 
 - Choose UI theme
 
 **Advanced tab**
-- Customize hotkeys for fast forward, rewind, fullscreen, and intro skip
+- Customize hotkeys for fast forward, rewind, and intro skip
 - Set fast forward step size
 - Configure the CORS proxy (for VOE-to-VOE unmuted autoplay)
 - Adjust CommLink polling interval
