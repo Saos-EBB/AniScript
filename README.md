@@ -97,7 +97,7 @@ I'll have a look when I find the time.
 ---
 ## Known Bugs 
 
-- if you open settings on mobile ( i only tried fire fox ) and you try to change a skip duration it will crash. 
+- !!! dont use settings on mobile !!! it will frezze , i maybe will fix this but not so soon 
 
 
 ---

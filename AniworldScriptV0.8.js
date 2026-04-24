@@ -2968,6 +2968,7 @@
         }
 
         async preparePlayer(player) {
+            this.handleAutoplay(player);
             this.setupHotkeys(player);
             this.setupOutroSkipHandling(player);
 
@@ -2981,7 +2982,6 @@
                     hasSkippedInitial = true;
                 }
             });
-            this.handleAutoplay(player);
 
             // Progress tracking — report to top scope every 5s while playing
             let lastProgressReport = 0;
