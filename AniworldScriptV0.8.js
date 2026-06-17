@@ -3392,9 +3392,6 @@
         const skipSeconds = advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS] || 0;
         if (skipSeconds > 0) {
           player.currentTime += skipSeconds;
-          if (advancedSettings[ADVANCED_SETTINGS_MAP.playOnLargeSkip]) {
-            player.play();
-          }
         }
       });
 
