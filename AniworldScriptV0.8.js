@@ -633,6 +633,18 @@
         padding: 4px 8px;
         vertical-align: middle;
       }
+
+      [id^=NotiflixNotifyWrap] > div {
+        padding: 10px 16px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+        min-height: unset !important;
+        border: none !important;
+      }
+
+      [id^=NotiflixNotifyWrap] span[class*="notiflix-notify-"] {
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+      }
       `);
     const notifyDefaultOptions = {
       closeButton: false,
@@ -715,15 +727,23 @@
     };
   })();
   function applyNotiflixTheme() {
-    const vars = getCurrentThemeVars();
     Notiflix.Notify.init({
-      background: vars.bgSecondary,
-      textColor: vars.textPrimary,
-      successColor: vars.accentGreen,
+      background: "#1e293b",
+      textColor: "#ffffff",
+      borderRadius: "8px",
+      fontFamily: "'Space Grotesk', -apple-system, sans-serif",
+      fontSize: "14px",
+      useIcon: false,
+      closeButton: false,
+      cssAnimation: true,
+      cssAnimationStyle: "fade",
+      cssAnimationDuration: 200,
+      distance: "12px",
+      successColor: "#22c55e",
       warningColor: "#f59e0b",
       failureColor: "#ef4444",
-      infoColor: "#6b6b8a",
-      fontFamily: vars.fontFamily,
+      infoColor: "#94a3b8",
+      zindex: 3222222,
     });
   }
   applyNotiflixTheme();
