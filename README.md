@@ -1,66 +1,72 @@
-# AniworldAddon
+# AniScript
 
-A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https://s.to), and [serienstream.to](https://serienstream.to) that enhances your watching experience with autoplay, skip controls, hotkeys, and more.
+A ViolentMonkey userscript for [aniworld.to](https://aniworld.to), [s.to](https://s.to), and [serienstream.to](https://serienstream.to).
 
 ---
 
 ## Features
 
 - **Autoplay** — automatically loads the next episode when the current one ends
-- **Outro skip threshold** — autoplay triggers X seconds before the video ends (configurable)
-- **Auto-skip at start** — skips the first N seconds of every episode automatically
-- **Intro skip** — one-press hotkey to jump past the intro (configurable skip size)
-- **Fast forward / rewind hotkeys** — keyboard shortcuts for seeking
-- **Skip to next / previous Episode** - keyboard shortcuts for skipping
-- **Highlight visited episodes** — previously opened episodes are marked in yellow
-- **Muted autoplay fallback** — if the browser blocks autoplay, the video starts muted and unmutes on first interaction
-- **Seamless episode navigation** — next episode loads without a full page reload
-- **Settings panel** — right-click the autoplay toggle button to open the settings UI
-- **VOE  player support**
+- **Auto intro skip** — at video start (0–15s window), automatically jumps forward by the configured intro skip size
+- **Outro skip threshold** — autoplay triggers X seconds before the video ends
+- **Manual intro skip hotkey** — one-press jump past the intro (configurable)
+- **Fast forward / rewind** — arrow keys by default, configurable
+- **Quick skip keys** — `X` +15s, `C` +30s, `V` +60s, `B` +90s (hold `Alt` for backward)
+- **Fullscreen hotkey** — `F` toggles fullscreen
+- **Prev / next episode hotkeys** — configurable
+- **Episode progress tracking** — visited episodes highlighted with a progress bar
+- **Episode manager** — grid overview of watched episodes, mark/unmark per episode
+- **Muted autoplay fallback** — if browser blocks autoplay, starts muted and unmutes on first interaction
+- **Settings panel** — right-click the autoplay button, works in fullscreen
+- **Mobile double-tap skip** — double-tap left/right zone in fullscreen to skip
+- **VOE / JWPlayer support**
+- **Classic and AniWorld UI themes**
 - **EN / DE localization**
-- **Doubletap to Skip on Mobile** - doubletap right trigger hotkey X / left trigger alt + X
 
 ---
 
 ## Installation
 
-1. Install [Violentmonkey](https://violentmonkey.github.io/) for your browser
-2. Click **[Install Script](#)** *(replace with your Greasyfork or raw GitHub link)*
-3. Visit [aniworld.to](https://aniworld.to) or [s.to](https://s.to) and open any episode
+1. Install [Violentmonkey](https://violentmonkey.github.io/)
+2. Install the script from [Greasyfork](#) or the raw GitHub link
+3. Open any episode on aniworld.to, s.to, or serienstream.to
 
-> Tested on **Brave** with **Violentmonkey**. Other browsers and userscript managers (Tampermonkey, Greasemonkey) may work but are not tested.
-
+> Tested on **Brave** with **Violentmonkey**.
 
 ---
 
 ## Usage
 
-| Action | How                                                |
-|--------|----------------------------------------------------|
-| Toggle autoplay on/off | Click the **toggle button** in the video player    |
-| Open settings | **Right-click** the toggle button                  |
-| Fast forward / rewind | `→` / `←` (default, configurable)                  |
-| Intro skip | Configurable hotkey in settings (empty by default) |
-| Quick skips | `X` = +15s, `C` = +30s, `V` = +60s, `B` = +90s     |
+| Action | How |
+|--------|-----|
+| Toggle autoplay | Click the **toggle button** in the player |
+| Open settings | **Right-click** the toggle button |
+| Fast forward / rewind | `→` / `←` |
+| Fullscreen | `F` |
+| Quick skip forward | `X` / `C` / `V` / `B` |
+| Quick skip backward | `Alt+X` / `Alt+C` / `Alt+V` / `Alt+B` |
+| Intro skip | Configurable hotkey (empty by default) |
+| Prev / next episode | Configurable hotkey (empty by default) |
+| Cancel autoplay countdown | `Backspace` |
 
 ---
 
 ## Settings
 
-Open the settings panel by **right-clicking** the autoplay toggle button in the player.
+Right-click the autoplay toggle button to open settings.
 
-**Preferences tab**
-- Enable/disable auto-skip at start + set how many seconds to skip
-- Set intro skip size and outro skip threshold
-- Toggle highlighted visited episodes
-- Toggle muted autoplay fallback
-- Choose UI theme
+**Preferences**
+- Auto intro skip toggle
+- Intro skip size, outro skip threshold, fast forward step size
+- Muted autoplay fallback
+- Episode highlight color
+- Play on intro skip toggle
+- Hotkeys (fast forward, rewind, intro skip, prev/next episode, cancel autoplay)
+- Skip key durations (X / C / V / B)
 
-**Advanced tab**
-- Customize hotkeys for fast forward, rewind, and intro skip
-- Set fast forward step size
-- Configure the CORS proxy (for VOE-to-VOE unmuted autoplay)
-- Adjust CommLink polling interval
+**Advanced**
+- UI theme (Classic / AniWorld)
+- CORS proxy (for VOE-to-VOE unmuted autoplay)
 
 > Settings marked with `*` require a page reload to take effect.
 
@@ -68,44 +74,19 @@ Open the settings panel by **right-clicking** the autoplay toggle button in the 
 
 ## Supported Sites
 
-| Site | Layout |
+| Site | Status |
 |------|--------|
 | aniworld.to | ✅ |
-| s.to | ✅ (old + new layout) |
+| s.to | ✅ |
 | serienstream.to | ✅ |
 
 ---
 
-## Requirements
-
-- [Violentmonkey](https://violentmonkey.github.io/) (tested on Brave)
-- No additional setup needed
-
----
-## Contributing
-
-This is a personal userscript tailored to my own needs — no active development roadmap.
-
-That said, feel free to:
-
-- 🐛 [Open an issue](https://github.com/Saos-EBB/AniScript/issues) if you find a bug
-- 💡 [Start a discussion](https://github.com/Saos-EBB/AniScript/discussions) if you have a feature request or suggestion
-- 🍴 Fork the repo and adapt it to your own needs (GPL-3.0)
-
-I'll have a look when I find the time.
-
----
-## Known Bugs 
-
-- !!! dont use settings on mobile !!! it will frezze , i maybe will fix this but not so soon 
-
-
----
 ## License
 
 [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html)
 
--- 
+---
 
 ## Credits
 

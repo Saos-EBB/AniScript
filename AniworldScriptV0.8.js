@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name             AniwordScriptV0.83
-// @name:de          AniwordScriptV0.83
+// @name             AniScriptV0.84
+// @name:de          AniScriptV0.84
 // @description      Based on AniworldAddonV0.7 by AniPlayer (https://greasyfork.org/users/1400386), modified and extended by Saos-EBB
-// @description:de   Autoplay für Aniworld.to  mit konfigurierbaren Skip-Hotkeys, Sprachspeicherung und mehr
-// @version          0.0.8
+// @description:de   Autoplay für Aniworld.to mit konfigurierbaren Skip-Hotkeys, Intro-Skip, Episoden-Tracking und mehr
+// @version          0.0.84
 // @match            https://aniworld.to/*
 // @match            https://s.to/*
 // @match            https://serienstream.to/*
