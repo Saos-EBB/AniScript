@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name             AniwordScriptV0.83
-// @name:de          AniwordScriptV0.83
+// @name             AniScriptV0.84
+// @name:de          AniScriptV0.84
 // @description      Based on AniworldAddonV0.7 by AniPlayer (https://greasyfork.org/users/1400386), modified and extended by Saos-EBB
-// @description:de   Autoplay für Aniworld.to  mit konfigurierbaren Skip-Hotkeys, Sprachspeicherung und mehr
-// @version          0.0.8
+// @description:de   Autoplay für Aniworld.to mit konfigurierbaren Skip-Hotkeys, Intro-Skip, Episoden-Tracking und mehr
+// @version          0.0.84
 // @match            https://aniworld.to/*
 // @match            https://s.to/*
 // @match            https://serienstream.to/*
@@ -633,6 +633,18 @@
         padding: 4px 8px;
         vertical-align: middle;
       }
+
+      [id^=NotiflixNotifyWrap] > div {
+        padding: 10px 16px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+        min-height: unset !important;
+        border: none !important;
+      }
+
+      [id^=NotiflixNotifyWrap] span[class*="notiflix-notify-"] {
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+      }
       `);
     const notifyDefaultOptions = {
       closeButton: false,
@@ -715,15 +727,23 @@
     };
   })();
   function applyNotiflixTheme() {
-    const vars = getCurrentThemeVars();
     Notiflix.Notify.init({
-      background: vars.bgSecondary,
-      textColor: vars.textPrimary,
-      successColor: vars.accentGreen,
+      background: "#1e293b",
+      textColor: "#ffffff",
+      borderRadius: "8px",
+      fontFamily: "'Space Grotesk', -apple-system, sans-serif",
+      fontSize: "14px",
+      useIcon: false,
+      closeButton: false,
+      cssAnimation: true,
+      cssAnimationStyle: "fade",
+      cssAnimationDuration: 200,
+      distance: "12px",
+      successColor: "#22c55e",
       warningColor: "#f59e0b",
       failureColor: "#ef4444",
-      infoColor: "#6b6b8a",
-      fontFamily: vars.fontFamily,
+      infoColor: "#94a3b8",
+      zindex: 3222222,
     });
   }
   applyNotiflixTheme();
@@ -1197,10 +1217,6 @@
       this.ignoreMissingFranchiseOnce = true;
       this.messenger = messenger;
       this.topScopeDomainId = "";
-      coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] =
-        advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
-      coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] =
-        advancedSettings[ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS];
     }
 
     // It is better not to be async
@@ -1215,13 +1231,6 @@
 
               if (packet.data.currentFranchiseId) {
                 this.currentFranchiseId = packet.data.currentFranchiseId;
-
-                coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] =
-                  advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
-                coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] =
-                  advancedSettings[
-                    ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS
-                  ];
 
                 this.settingsPane?.refresh();
                 this.ignoreMissingFranchiseOnce = false;
@@ -2441,58 +2450,17 @@
       const preferencesTab = panel.querySelector("#aw-tab-preferences");
       const advancedTab = panel.querySelector("#aw-tab-advanced");
 
-      // Skip Settings Section
-      const { section: skipSettingsSection, card: skipSettingsCard } =
-        createSection("clock", "Skip Settings", "skip");
-      skipSettingsCard.appendChild(
-        createSettingRow(
-          i18n.introSkipSize,
-          i18n.introSkipSizeTooltip,
-          createNumberInput(
-            "currentLargeSkipSizeS",
-            coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS],
-            0,
-            300,
-            1,
-            (v) => {
-              coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] = v;
-            },
-          ),
-        ),
-      );
-      skipSettingsCard.appendChild(
-        createSettingRow(
-          i18n.outroSkipThreshold,
-          i18n.outroSkipThresholdTooltip,
-          createNumberInput(
-            "currentOutroSkipThresholdS",
-            coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS],
-            1,
-            300,
-            1,
-            (v, inputEl) => {
-              // Enforce minimum of 1
-              if (v < 1) {
-                v = 1;
-                if (inputEl) inputEl.value = v;
-              }
-              coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] = v;
-            },
-          ),
-        ),
-      );
-      advancedTab.appendChild(skipSettingsSection);
 
-      // Auto Skip Section
+      // Auto Intro Skip Section
       const { section: autoSkipSection, card: autoSkipCard } = createSection(
         "forward",
-        "Auto Skip",
+        "Auto Intro Skip",
         "autoSkip",
       );
       autoSkipCard.appendChild(
         createSettingRow(
-          i18n.autoSkipAtStart,
-          i18n.autoSkipAtStartTooltip,
+          "Intro automatisch skippen",
+          "Springt beim Videostart (0–15s) automatisch um die Intro-Skip-Größe vor",
           createToggle(
             "shouldAutoSkipOnStart",
             coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart],
@@ -2502,7 +2470,7 @@
           ),
         ),
       );
-      advancedTab.appendChild(autoSkipSection);
+      preferencesTab.appendChild(autoSkipSection);
 
       // Playback Section
       const { section: playbackSection, card: playbackCard } = createSection(
@@ -2523,7 +2491,7 @@
           ),
         ),
       );
-      advancedTab.appendChild(playbackSection);
+      preferencesTab.appendChild(playbackSection);
 
       // Appearance Section - Enhanced Theme System
       const { section: appearanceSection, card: appearanceCard } =
@@ -2553,10 +2521,10 @@
 
       advancedTab.appendChild(appearanceSection);
 
-      // Defaults Section (moved from Advanced)
+      // Skip Settings Section
       const { section: defaultsSection, card: defaultsCard } = createSection(
         "sliders-h",
-        "Defaults",
+        "Skip Settings",
         "defaults",
       );
       defaultsCard.appendChild(
@@ -2614,7 +2582,7 @@
           ),
         ),
       );
-      advancedTab.appendChild(defaultsSection);
+      preferencesTab.appendChild(defaultsSection);
 
       // ============================================
       // ADVANCED TAB
@@ -2800,29 +2768,6 @@
       );
       preferencesTab.appendChild(skipDurationsSection);
 
-      // Timing Section
-      const { section: timingSection, card: timingCard } = createSection(
-        "clock",
-        "Timing",
-        "timing",
-      );
-      timingCard.appendChild(
-        createSettingRow(
-          i18n.introSkipCooldown,
-          i18n.introSkipCooldownTooltip,
-          createNumberInput(
-            "largeSkipCooldownMs",
-            advancedSettings[ADVANCED_SETTINGS_MAP.largeSkipCooldownMs],
-            0,
-            2000,
-            10,
-            (v) => {
-              advancedSettings[ADVANCED_SETTINGS_MAP.largeSkipCooldownMs] = v;
-            },
-          ),
-        ),
-      );
-      advancedTab.appendChild(timingSection);
 
       // Behavior Section
       const { section: behaviorSection, card: behaviorCard } = createSection(
@@ -2877,7 +2822,7 @@
           ),
         ),
       );
-      advancedTab.appendChild(behaviorSection);
+      preferencesTab.appendChild(behaviorSection);
 
       // Network Section
       const { section: networkSection, card: networkCard } = createSection(
@@ -2897,24 +2842,6 @@
             },
             true,
           ), // wide = true for URL input
-        ),
-      );
-      networkCard.appendChild(
-        createSettingRow(
-          i18n.commlinkPollingInterval,
-          i18n.commlinkPollingIntervalTooltip,
-          createNumberInput(
-            "commlinkPollingIntervalMs",
-            advancedSettings[ADVANCED_SETTINGS_MAP.commlinkPollingIntervalMs],
-            10,
-            500,
-            10,
-            (v) => {
-              advancedSettings[
-                ADVANCED_SETTINGS_MAP.commlinkPollingIntervalMs
-              ] = v;
-            },
-          ),
         ),
       );
       advancedTab.appendChild(networkSection);
@@ -3004,10 +2931,22 @@
             panel.classList.remove("active");
             overlay.classList.remove("active");
           } else {
+            const fsTarget = document.fullscreenElement || document.body;
+            if (!fsTarget.contains(panel)) {
+              fsTarget.appendChild(overlay);
+              fsTarget.appendChild(panel);
+            }
             panel.classList.add("active");
             overlay.classList.add("active");
           }
         },
+      });
+
+      document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement && !document.body.contains(panel)) {
+          document.body.appendChild(overlay);
+          document.body.appendChild(panel);
+        }
       });
 
       return paneInterface;
@@ -3111,13 +3050,13 @@
         let lastSkipTime = 0;
 
         keyboardJS.bind(hotkeysSettings[HOTKEYS_SETTINGS_MAP.largeSkip], () => {
-          if (coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS]) {
+          const introSkipSize = advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
+          if (introSkipSize) {
             const now = Date.now();
             if (now - lastSkipTime < cooldownTime) return;
             lastSkipTime = now;
 
-            player.currentTime +=
-              coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS];
+            player.currentTime += introSkipSize;
 
             const skipBtn = document.querySelector(".SkipIntroBtn");
             if (skipBtn) {
@@ -3203,6 +3142,16 @@
         showSkipToast(SKIP_CONFIG.skipB, true);
       });
 
+      // ---- F key for fullscreen toggle ----
+      keyboardJS.bind("f", (e) => {
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          (document.querySelector("div#vp") || document.querySelector("video"))?.requestFullscreen?.();
+        }
+      });
+
       // ---- Mobile double-tap hotkeys (fullscreen only) ----
       // Left 30%  → Alt+X (backward skip by skipX seconds)
       // Middle 40% → no action (native player behavior)
@@ -3255,7 +3204,7 @@
         const timeLeft = player.duration - player.currentTime;
 
         if (
-          timeLeft <= coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS]
+          timeLeft <= advancedSettings[ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS]
         ) {
           outroHasBeenReached = true;
 
@@ -3433,15 +3382,16 @@
 
       let hasSkippedInitial = false;
       player.addEventListener("timeupdate", function autoStartSkip() {
-        if (
-          !hasSkippedInitial &&
-          coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart]
-        ) {
-          const skipSeconds = SKIP_CONFIG.autoSkipSeconds;
-          if (player.currentTime < skipSeconds) {
-            player.currentTime = skipSeconds;
-          }
+        if (hasSkippedInitial) return;
+        if (player.currentTime > 15) {
           hasSkippedInitial = true;
+          return;
+        }
+        if (!coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart]) return;
+        hasSkippedInitial = true;
+        const skipSeconds = advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS] || 0;
+        if (skipSeconds > 0) {
+          player.currentTime += skipSeconds;
         }
       });
 
