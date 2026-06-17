@@ -1197,10 +1197,6 @@
       this.ignoreMissingFranchiseOnce = true;
       this.messenger = messenger;
       this.topScopeDomainId = "";
-      coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] =
-        advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
-      coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] =
-        advancedSettings[ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS];
     }
 
     // It is better not to be async
@@ -1215,13 +1211,6 @@
 
               if (packet.data.currentFranchiseId) {
                 this.currentFranchiseId = packet.data.currentFranchiseId;
-
-                coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] =
-                  advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
-                coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] =
-                  advancedSettings[
-                    ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS
-                  ];
 
                 this.settingsPane?.refresh();
                 this.ignoreMissingFranchiseOnce = false;
@@ -2441,79 +2430,22 @@
       const preferencesTab = panel.querySelector("#aw-tab-preferences");
       const advancedTab = panel.querySelector("#aw-tab-advanced");
 
-      // Skip Settings Section
-      const { section: skipSettingsSection, card: skipSettingsCard } =
-        createSection("clock", "Skip Settings", "skip");
-      skipSettingsCard.appendChild(
-        createSettingRow(
-          i18n.introSkipSize,
-          i18n.introSkipSizeTooltip,
-          createNumberInput(
-            "currentLargeSkipSizeS",
-            coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS],
-            0,
-            300,
-            1,
-            (v) => {
-              coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS] = v;
-            },
-          ),
-        ),
-      );
-      skipSettingsCard.appendChild(
-        createSettingRow(
-          i18n.outroSkipThreshold,
-          i18n.outroSkipThresholdTooltip,
-          createNumberInput(
-            "currentOutroSkipThresholdS",
-            coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS],
-            1,
-            300,
-            1,
-            (v, inputEl) => {
-              // Enforce minimum of 1
-              if (v < 1) {
-                v = 1;
-                if (inputEl) inputEl.value = v;
-              }
-              coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS] = v;
-            },
-          ),
-        ),
-      );
-      preferencesTab.appendChild(skipSettingsSection);
 
-      // Auto Skip Section
+      // Auto Intro Skip Section
       const { section: autoSkipSection, card: autoSkipCard } = createSection(
         "forward",
-        "Auto Skip",
+        "Auto Intro Skip",
         "autoSkip",
       );
       autoSkipCard.appendChild(
         createSettingRow(
-          i18n.autoSkipAtStart,
-          i18n.autoSkipAtStartTooltip,
+          "Intro automatisch skippen",
+          "Springt beim Videostart (0–15s) automatisch um die Intro-Skip-Größe vor",
           createToggle(
             "shouldAutoSkipOnStart",
             coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart],
             (v) => {
               coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart] = v;
-            },
-          ),
-        ),
-      );
-      autoSkipCard.appendChild(
-        createSettingRow(
-          i18n.skipSecondsOnStart,
-          i18n.skipSecondsOnStartTooltip,
-          createNumberInput(
-            "autoSkipSecondsOnStart",
-            coreSettings[CORE_SETTINGS_MAP.autoSkipSecondsOnStart],
-            0,
-            300,
-            1,
-            (v) => {
-              coreSettings[CORE_SETTINGS_MAP.autoSkipSecondsOnStart] = v;
             },
           ),
         ),
@@ -2569,10 +2501,10 @@
 
       advancedTab.appendChild(appearanceSection);
 
-      // Defaults Section (moved from Advanced)
+      // Skip Settings Section
       const { section: defaultsSection, card: defaultsCard } = createSection(
         "sliders-h",
-        "Defaults",
+        "Skip Settings",
         "defaults",
       );
       defaultsCard.appendChild(
@@ -2630,7 +2562,7 @@
           ),
         ),
       );
-      advancedTab.appendChild(defaultsSection);
+      preferencesTab.appendChild(defaultsSection);
 
       // ============================================
       // ADVANCED TAB
@@ -3098,13 +3030,13 @@
         let lastSkipTime = 0;
 
         keyboardJS.bind(hotkeysSettings[HOTKEYS_SETTINGS_MAP.largeSkip], () => {
-          if (coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS]) {
+          const introSkipSize = advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS];
+          if (introSkipSize) {
             const now = Date.now();
             if (now - lastSkipTime < cooldownTime) return;
             lastSkipTime = now;
 
-            player.currentTime +=
-              coreSettings[CORE_SETTINGS_MAP.currentLargeSkipSizeS];
+            player.currentTime += introSkipSize;
 
             const skipBtn = document.querySelector(".SkipIntroBtn");
             if (skipBtn) {
@@ -3252,7 +3184,7 @@
         const timeLeft = player.duration - player.currentTime;
 
         if (
-          timeLeft <= coreSettings[CORE_SETTINGS_MAP.currentOutroSkipThresholdS]
+          timeLeft <= advancedSettings[ADVANCED_SETTINGS_MAP.defaultOutroSkipThresholdS]
         ) {
           outroHasBeenReached = true;
 
@@ -3430,15 +3362,19 @@
 
       let hasSkippedInitial = false;
       player.addEventListener("timeupdate", function autoStartSkip() {
-        if (
-          !hasSkippedInitial &&
-          coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart]
-        ) {
-          const skipSeconds = coreSettings[CORE_SETTINGS_MAP.autoSkipSecondsOnStart] || 0;
-          if (skipSeconds > 0 && player.currentTime < skipSeconds) {
-            player.currentTime = skipSeconds;
-          }
+        if (hasSkippedInitial) return;
+        if (player.currentTime > 15) {
           hasSkippedInitial = true;
+          return;
+        }
+        if (!coreSettings[CORE_SETTINGS_MAP.shouldAutoSkipOnStart]) return;
+        hasSkippedInitial = true;
+        const skipSeconds = advancedSettings[ADVANCED_SETTINGS_MAP.defaultLargeSkipSizeS] || 0;
+        if (skipSeconds > 0) {
+          player.currentTime += skipSeconds;
+          if (advancedSettings[ADVANCED_SETTINGS_MAP.playOnLargeSkip]) {
+            player.play();
+          }
         }
       });
 
