@@ -43,6 +43,22 @@ A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniwo
 
 ---
 
+## How Fullscreen Works
+
+`F` doesn't call the real Fullscreen API. Instead it's a CSS "theater mode": the player's container is pinned `position:fixed` over the whole viewport and the iframe is stretched to 100%. No browser fullscreen state is ever entered.
+
+This is deliberate, not a shortcut — real fullscreen was tried first and broke smooth bingeing:
+
+- **Real fullscreen on the iframe dies on episode switch.** Auto-next-episode swaps the iframe's `src` to the next episode (so the fullscreen survives without a full page reload). But cross-origin navigation inside an iframe silently exits any fullscreen held on it.
+- **Real fullscreen on the outer container is worse.** Aniworld's player wrapper is a fixed ~410×500px box, so "fullscreen" on it just shows a stamp-sized video floating in a black screen.
+- **Re-requesting fullscreen after each switch doesn't work either** — the Fullscreen API requires a user gesture, and an autoplay-triggered episode change isn't one.
+
+CSS theater mode sidesteps all three: there's no fullscreen state for the browser to revoke, so it survives every episode change and reload automatically (the mode is remembered in settings and reapplied on page load). For real OS-level fullscreen on top of that, press `F11` — that's browser-chrome fullscreen, not tied to any element, so it also survives iframe swaps.
+
+Settings panel and toast notifications mount onto `document.fullscreenElement` when present, falling back to `document.body` — this only matters for real `F11` fullscreen, since theater mode never sets that property.
+
+---
+
 ## Settings
 
 Right-click the toggle switch to open settings:
