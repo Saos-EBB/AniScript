@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JoynScript
 // @namespace    SaosOne
-// @version      1.0.0
+// @version      1.1.0
 // @description  Comfort für Joyn: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
 // @match        *://joyn.de/*
 // @match        *://*.joyn.de/*
@@ -88,6 +88,7 @@
     },
     // Abspiel-Seiten. Zusätzlich gilt überall: Video > 5 Min = Hauptinhalt.
     isWatchUrl: (url) => /^\/play\//i.test(url.pathname),
+    isSearchUrl: (url) => /^\/suche/i.test(url.pathname),
     searchUrl: (q) => `https://www.joyn.de/suche?q=${encodeURIComponent(q)}`,
     googleSite: "joyn.de",
     titleSuffix: /\s*[|–—-]\s*Joyn\b.*$/i,
@@ -101,6 +102,7 @@
     fsToTheater: true, // Vollbild-Button des Players → Vollbild auf <html>
     showFab: true, // ★-Button unten links
     minWatchSec: 20, // ab so vielen Sekunden Wiedergabe in die Liste
+    listOnSearch: true, // Suchseite automatisch als Text-Liste zeigen
   };
 
   function loadConfig() {
@@ -610,6 +612,15 @@
     .settings[hidden] { display: none; }
     .settings label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
     .hint { font-size: 11px; color: #777; padding: 6px 14px 10px; background: #1a1a24; }
+    .lrow {
+      display: flex; align-items: baseline; gap: 10px; padding: 7px 14px;
+      cursor: pointer; border-bottom: 1px solid #22222d; font-size: 15px;
+    }
+    .lrow.sel, .lrow:hover { background: #262636; }
+    .lrow .tag { flex: 0 0 52px; font-size: 11px; color: #8a8aa0; text-transform: uppercase; letter-spacing: .03em; }
+    .lrow .lt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lrow .mark { color: #ffd54a; font-size: 12px; }
+    .count { font-size: 12px; color: #9a9ab0; align-self: center; }
     .toast {
       position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
       z-index: 2147483647; padding: 9px 16px; border-radius: 8px;
@@ -712,6 +723,7 @@
 
   function go(url) {
     closeOverlay();
+    closeListView();
     location.href = url;
   }
 
@@ -750,6 +762,7 @@
       }),
       cb("theaterMode", "Theater-Modus dauerhaft (T)", theaterTick),
       cb("showFab", "★-Button unten links anzeigen", updateFab),
+      cb("listOnSearch", "Suchergebnisse automatisch als Text-Liste zeigen (sonst L)"),
       h(
         "div",
         { style: "margin-top:8px" },
@@ -794,7 +807,7 @@
     );
     const hint = h("div", {
       class: "hint",
-      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · T Theater-Modus",
+      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · L Text-Liste · T Theater-Modus",
     });
 
     function row(e, i) {
@@ -902,6 +915,7 @@
 
   function openOverlay() {
     ensureHost();
+    closeListView();
     if (!overlay) overlay = buildOverlay();
     overlay.input.value = "";
     overlay.render();
@@ -912,6 +926,210 @@
     if (overlay) overlay.backdrop.hidden = true;
   }
   const overlayOpen = () => !!overlay && !overlay.backdrop.hidden;
+
+  // ═══════════════════════════════════════════════
+  // TEXT-LISTE – alle Titel der aktuellen Seite als kompakte Liste statt
+  // Kachel-Wand. Auf Suchseiten automatisch, sonst per L.
+  // Selektor-frei: alle Links, die SITE.parse() als Serie/Film erkennt,
+  // in DOM-Reihenfolge (= Reihenfolge der Seite), pro Serie einmal.
+  // ═══════════════════════════════════════════════
+  const TYPE_LABEL = { serien: "Serie", filme: "Film", shows: "Show", compilation: "Reihe", sport: "Sport" };
+
+  function linkTitle(a, info) {
+    const cands = [
+      a.getAttribute("aria-label"),
+      a.getAttribute("title"),
+      a.querySelector("img[alt]")?.getAttribute("alt"),
+      a.querySelector("h1,h2,h3,h4")?.textContent,
+      a.innerText,
+    ];
+    for (const c of cands) {
+      const t = (c || "").split("\n").map((x) => x.trim()).find(Boolean);
+      if (t && t.length > 1 && t.length < 120) return t;
+    }
+    return info.title;
+  }
+
+  function collectPageTitles() {
+    const seen = new Map();
+    for (const a of document.querySelectorAll("a[href]")) {
+      let url;
+      try {
+        url = new URL(a.href, location.href);
+      } catch {
+        continue;
+      }
+      if (url.origin !== location.origin) continue;
+      const info = SITE.parse(url);
+      if (!info) continue;
+      const title = linkTitle(a, info);
+      const prev = seen.get(info.key);
+      if (!prev) {
+        const type = info.key.split("/")[0];
+        seen.set(info.key, { ...info, title, href: url.href, type: TYPE_LABEL[type] || humanize(type) });
+      } else if (prev.title === info.title && title !== info.title) {
+        prev.title = title; // besseren Titel als den Slug nachreichen
+      }
+    }
+    return [...seen.values()];
+  }
+
+  let listView = null; // { backdrop, input, render, timer }
+
+  function buildListView() {
+    let sel = 0;
+    let items = [];
+    let signature = "";
+
+    const input = h("input", {
+      class: "search",
+      type: "text",
+      placeholder: `Filtern…  (Strg+Enter = neue ${SITE.name}-Suche)`,
+      autocomplete: "off",
+      spellcheck: "false",
+    });
+    const list = h("div", { class: "list" });
+    const count = h("span", { class: "count" });
+    const foot = h(
+      "div",
+      { class: "foot" },
+      count,
+      h("span", { class: "grow" }),
+      h("button", {
+        class: "btn",
+        text: "Mehr laden ↓",
+        title: "Seite im Hintergrund nach unten scrollen, damit sie weitere Titel nachlädt",
+        onclick: () => window.scrollTo(0, document.documentElement.scrollHeight),
+      }),
+      h("button", {
+        class: "btn",
+        text: `🔎 ${SITE.name}-Suche`,
+        onclick: () => input.value.trim() && go(SITE.searchUrl(input.value.trim())),
+      }),
+      h("button", { class: "btn", text: "Schließen", onclick: closeListView }),
+    );
+    const hint = h("div", {
+      class: "hint",
+      text: "↑/↓ wählen · Enter öffnen · Strg+Enter neue Suche · Esc / L schließen · ★ = in Meine Serien",
+    });
+
+    function paintSel() {
+      [...list.children].forEach((el, i) => el.classList.toggle("sel", i === sel));
+      list.children[sel]?.scrollIntoView({ block: "nearest" });
+    }
+
+    function render(force) {
+      const all = collectPageTitles();
+      const sig = all.map((e) => e.key + e.title).join("|") + "#" + input.value;
+      if (!force && sig === signature) return;
+      signature = sig;
+      const tokens = norm(input.value).split(/\s+/).filter(Boolean);
+      items = tokens.length
+        ? all.filter((e) => tokens.every((t) => norm(`${e.title} ${e.type}`).includes(t)))
+        : all;
+      sel = Math.min(sel, Math.max(0, items.length - 1));
+      const lib = loadLib();
+      list.replaceChildren(
+        ...(items.length
+          ? items.map((e, i) =>
+              h(
+                "div",
+                {
+                  class: "lrow" + (i === sel ? " sel" : ""),
+                  title: e.href,
+                  onclick: () => go(e.href),
+                  onmouseenter: () => {
+                    sel = i;
+                    paintSel();
+                  },
+                },
+                h("span", { class: "tag", text: e.type }),
+                h("span", { class: "lt", text: e.title }),
+                lib[e.key] ? h("span", { class: "mark", text: "★" }) : null,
+              ),
+            )
+          : [
+              h("div", {
+                class: "empty",
+                text: all.length
+                  ? "Kein Titel passt zum Filter."
+                  : "Noch keine Titel auf der Seite. Die Liste füllt sich automatisch, sobald die Seite Ergebnisse lädt.",
+              }),
+            ]),
+      );
+      count.textContent = tokens.length ? `${items.length} von ${all.length} Titeln` : `${all.length} Titel`;
+    }
+
+    input.addEventListener("input", () => {
+      sel = 0;
+      render(true);
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "ArrowDown") {
+        sel = Math.min(sel + 1, items.length - 1);
+        paintSel();
+        e.preventDefault();
+      } else if (e.key === "ArrowUp") {
+        sel = Math.max(sel - 1, 0);
+        paintSel();
+        e.preventDefault();
+      } else if (e.key === "Enter") {
+        const q = input.value.trim();
+        if ((e.ctrlKey || e.metaKey || !items.length) && q) go(SITE.searchUrl(q));
+        else if (items[sel]) go(items[sel].href);
+      } else if (e.key === "Escape") {
+        closeListView();
+      }
+    });
+    for (const t of ["keyup", "keypress"]) input.addEventListener(t, (e) => e.stopPropagation());
+
+    const panel = h("div", { class: "panel" }, input, list, foot, hint);
+    const backdrop = h(
+      "div",
+      { class: "backdrop", hidden: true, onmousedown: (e) => e.target === backdrop && closeListView() },
+      panel,
+    );
+    shadow.append(backdrop);
+    return { backdrop, input, render, timer: 0 };
+  }
+
+  function openListView(prefill = "") {
+    ensureHost();
+    closeOverlay();
+    if (!listView) listView = buildListView();
+    listView.input.value = prefill;
+    listView.render(true);
+    listView.backdrop.hidden = false;
+    clearInterval(listView.timer);
+    // SPA lädt Ergebnisse nach (Tippen, Lazy-Loading) → laufend nachziehen
+    listView.timer = setInterval(() => listView.render(false), 1000);
+    setTimeout(() => listView.input.focus(), 0);
+  }
+  function closeListView() {
+    if (!listView) return;
+    listView.backdrop.hidden = true;
+    clearInterval(listView.timer);
+  }
+  const listViewOpen = () => !!listView && !listView.backdrop.hidden;
+
+  // Auf Suchseiten automatisch öffnen. Einmal pro Suchseiten-Besuch:
+  // wer schließt, bekommt die normale Ansicht, bis er die Suche verlässt.
+  function setupAutoListView() {
+    let wasSearch = false;
+    let lastHref = "";
+    setInterval(() => {
+      if (location.href === lastHref) return;
+      lastHref = location.href;
+      const isSearch = SITE.isSearchUrl(location);
+      if (isSearch && !wasSearch && CONFIG.listOnSearch && !overlayOpen()) {
+        // Filter leer lassen: die Seite hat schon nach der Query gesucht
+        openListView("");
+      }
+      if (!isSearch) closeListView();
+      wasSearch = isSearch;
+    }, 500);
+  }
 
   // ═══════════════════════════════════════════════
   // HOTKEYS (capture → wir sind vor dem Player dran)
@@ -932,10 +1150,14 @@
         let handled = true;
         if ((e.key === "/" && plain) || ((e.ctrlKey || e.metaKey) && !e.altKey && key === "k")) {
           overlayOpen() ? closeOverlay() : openOverlay();
+        } else if (plain && !e.shiftKey && key === "l") {
+          listViewOpen() ? closeListView() : openListView();
         } else if (plain && !e.shiftKey && key === "t") {
           toggleTheater();
         } else if (e.key === "Escape" && overlayOpen()) {
           closeOverlay();
+        } else if (e.key === "Escape" && listViewOpen()) {
+          closeListView();
         } else if (e.key === "Escape" && CONFIG.theaterMode && !document.fullscreenElement) {
           toggleTheater();
         } else {
@@ -969,6 +1191,7 @@
     ensureHost();
     setupHotkeys();
     setupWatchTracking();
+    setupAutoListView();
     setInterval(theaterTick, 700);
     setInterval(ensureHost, 3000); // falls die Seite <html>-Kinder aufräumt
     theaterTick();
