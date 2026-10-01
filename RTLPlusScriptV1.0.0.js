@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RTLPlusScript
 // @namespace    SaosOne
-// @version      1.4.1
+// @version      1.5.0
 // @description  Comfort für RTL+: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
 // @match        *://plus.rtl.de/*
 // @grant        GM_getValue
@@ -146,6 +146,16 @@
     }
   }
   const CONFIG = loadConfig();
+
+  // Optionale SITE-Felder (Joyn/RTL+ nutzen die Defaults):
+  //  libName      Name der eigenen Liste
+  //  leafTypes    URL-Typen ohne Unterebene (Film, Video …)
+  //  typeLabels   Anzeige-Namen der Typen
+  //  minMainSec   ab welcher Länge ein Video Hauptinhalt ist
+  //  features     fsHook / theater / slash ausschalten, wo die Seite das selbst kann
+  //  linkTitle, itemInfo, paidClassRe  siehe YouTubeScript
+  const LIB = SITE.libName || "Meine Serien";
+  const FEAT = { fsHook: true, theater: true, slash: true, ...(SITE.features || {}) };
 
   const P = "us-" + SITE.name.toLowerCase().replace(/[^a-z]/g, ""); // CSS-Präfix
   const C_ON = P + "-theater-on"; // auf <html>
@@ -316,7 +326,7 @@
   `;
 
   function isMainVideo(v) {
-    return Number.isFinite(v.duration) && v.duration > 300;
+    return Number.isFinite(v.duration) && v.duration > (SITE.minMainSec || 300);
   }
 
   function findVideo() {
@@ -482,7 +492,7 @@
   }
 
   function cleanTitle(t) {
-    return (t || "").replace(SITE.titleSuffix, "").trim();
+    return (t || "").replace(/^\(\d+\)\s*/, "").replace(SITE.titleSuffix, "").trim();
   }
 
   // Auf der Serien-Übersicht selbst ist die h1 der beste Titel.
@@ -490,7 +500,7 @@
     const onSeriesPage =
       location.pathname.replace(/\/$/, "") === new URL(info.seriesUrl).pathname;
     const h1 = onSeriesPage && document.querySelector("h1")?.textContent?.trim();
-    return h1 && h1.length < 120 ? h1 : info.title;
+    return h1 && h1.length < 120 ? cleanTitle(h1) : info.title;
   }
 
   function upsertCurrent(extra = {}) {
@@ -501,7 +511,8 @@
     lib[info.key] = {
       ...old,
       key: info.key,
-      title: old.title || bestTitle(info),
+      // Platzhalter-Titel (Slug/ID) ersetzen, sobald ein echter da ist
+      title: old.title && old.title !== info.title ? old.title : bestTitle(info),
       seriesUrl: info.seriesUrl,
       lastUrl: old.lastUrl || info.seriesUrl,
       lastLabel: old.lastLabel || "",
@@ -648,6 +659,7 @@
       cursor: pointer; border-bottom: 1px solid #22222d;
     }
     .row.sel, .row:hover { background: #262636; }
+    .sleeprow .title { color: #bc8cff; }
     .main { flex: 1; min-width: 0; }
     .title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sub { font-size: 12px; color: #9a9ab0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
@@ -689,6 +701,7 @@
     .tl.season { color: #c9d1d9; }
     .tl.episode { color: #adbac7; }
     .tl.info, .tl.more { color: #6e7681; font-style: italic; }
+    .tl.sleeps, .tl.sleepentry { color: #bc8cff; }
     .tmeta, .ttag { color: #6e7681; }
     .ttag { font-size: 12px; }
     .tpaid, .tstar { color: #e3b341; }
@@ -769,7 +782,7 @@
       host = document.createElement(P + "-ui");
       shadow = host.attachShadow({ mode: "open" });
       addSheet(shadow, UI_CSS);
-      fab = h("button", { class: "fab", title: "Meine Serien (/) · Baum: Strg+K", text: "★", onclick: () => (overlayOpen() ? closeOverlay() : openOverlay()) });
+      fab = h("button", { class: "fab", title: `${LIB}${FEAT.slash ? " (/)" : ""} · Baum: Strg+K`, text: "★", onclick: () => (overlayOpen() ? closeOverlay() : openOverlay()) });
       toastEl = h("div", { class: "toast" });
       shadow.append(fab, toastEl);
     }
@@ -837,7 +850,7 @@
     const input = h("input", {
       class: "search",
       type: "text",
-      placeholder: `Meine ${SITE.name}-Serien durchsuchen…  (Enter = weiterschauen)`,
+      placeholder: `${LIB} durchsuchen…  (Enter = weiterschauen)`,
       autocomplete: "off",
       spellcheck: "false",
     });
@@ -874,7 +887,7 @@
           class: "btn",
           text: "Liste komplett leeren",
           onclick: () => {
-            if (confirm(`Alle Einträge aus „Meine ${SITE.name}-Serien“ löschen?`)) {
+            if (confirm(`Alle Einträge aus „${LIB}“ löschen?`)) {
               saveLib({});
               render();
             }
@@ -915,6 +928,27 @@
     });
 
     function row(e, i) {
+      if (e.__sleep) {
+        const z = e.__sleep;
+        return h(
+          "div",
+          {
+            class: "row sleeprow" + (i === sel ? " sel" : ""),
+            title: z.setUrl,
+            onclick: () => resumeSleep(z),
+            onmouseenter: () => {
+              sel = i;
+              paintSel();
+            },
+          },
+          h(
+            "div",
+            { class: "main" },
+            h("div", { class: "title", text: "💤 Weiterschauen ab Sleep-Timer" }),
+            h("div", { class: "sub", text: `${z.title}${z.ep ? " " + z.ep : ""} · ${sleepLogText(z)}` }),
+          ),
+        );
+      }
       const sleep = e.sleepStop ? `💤 ${epLabel(epId(e.sleepStop.path, e.seriesUrl)) || "eingeschlafen"}` : "";
       const sub = [e.lastLabel, relTime(e.ts), sleep].filter(Boolean).join(" · ");
       const stop = (fn) => (ev) => {
@@ -968,6 +1002,8 @@
     function render() {
       const q = input.value.trim();
       items = filterEntries(q);
+      const z = loadSleepLog()[0];
+      if (!q && z) items.unshift({ __sleep: z });
       sel = Math.min(sel, Math.max(0, items.length - 1));
       list.replaceChildren(
         ...(items.length
@@ -1001,7 +1037,7 @@
       } else if (e.key === "Enter") {
         const q = input.value.trim();
         if ((e.ctrlKey || e.metaKey || !items.length) && q) go(SITE.searchUrl(q));
-        else if (items[sel]) go(items[sel].lastUrl);
+        else if (items[sel]) items[sel].__sleep ? resumeSleep(items[sel].__sleep) : go(items[sel].lastUrl);
       } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyK") {
         e.preventDefault();
         closeOverlay();
@@ -1058,9 +1094,12 @@
   const TYPE_LABEL = { serien: "Serie", filme: "Film", shows: "Show", compilation: "Reihe", sport: "Sport" };
   const BRANCH_COLORS = ["#f14e32", "#3fb950", "#58a6ff", "#bc8cff", "#e3b341", "#39c5cf"];
   const GROUP_PREVIEW = 12; // so viele Titel pro Reihe, Rest hinter „… N weitere“
-  const PAID_CLASS_RE = /premium|paywall|locked|plus-?badge|subscri/i;
+  const PAID_CLASS_RE = SITE.paidClassRe === undefined ? /premium|paywall|locked|plus-?badge|subscri/i : SITE.paidClassRe;
+  const typeLabel = (t) => (SITE.typeLabels || TYPE_LABEL)[t] ?? humanize(t); // "" = kein Etikett
+  const kindOf = (t) => ((SITE.leafTypes || ["filme"]).includes(t) ? "film" : "series");
 
   function linkTitle(a, info) {
+    if (SITE.linkTitle) return SITE.linkTitle(a) || info.title;
     const cands = [
       a.getAttribute("aria-label"),
       a.getAttribute("title"),
@@ -1087,7 +1126,7 @@
       for (const el of [tile, ...tile.querySelectorAll("*")]) {
         const attrs = ["aria-label", "title", "alt"].map((k) => el.getAttribute(k) || "").join(" ");
         const cls = typeof el.className === "string" ? el.className : el.getAttribute("class") || "";
-        if (SITE.paidRe.test(attrs) || PAID_CLASS_RE.test(cls)) {
+        if (SITE.paidRe.test(attrs) || (PAID_CLASS_RE && PAID_CLASS_RE.test(cls))) {
           paid = true;
           break;
         }
@@ -1122,7 +1161,7 @@
     }
     const groups = [];
     const byName = new Map();
-    let current = "Highlights";
+    let current = SITE.firstGroup || "Highlights"; // Kacheln vor der ersten Überschrift
     for (const el of document.querySelectorAll('h1,h2,h3,h4,[role="heading"],a[href]')) {
       if (el.tagName === "A") {
         const l = links.get(el);
@@ -1142,9 +1181,10 @@
             title: l.title,
             href: l.url.href,
             seriesUrl: l.info.seriesUrl,
-            type: TYPE_LABEL[type] || humanize(type),
-            kind: type === "filme" ? "film" : "series",
+            type: typeLabel(type),
+            kind: kindOf(type),
             paid,
+            ...(SITE.itemInfo ? SITE.itemInfo(el) : {}), // { info: "Kanal · 12:34", pct }
           });
         } else {
           if (prev.title === l.info.title && l.title !== l.info.title) prev.title = l.title;
@@ -1240,7 +1280,7 @@
   const showAll = new Set(); // Reihen-IDs, bei denen „… N weitere“ aufgeklappt ist
 
   function isOpen(n) {
-    return openState.has(n.id) ? openState.get(n.id) : n.kind === "group";
+    return openState.has(n.id) ? openState.get(n.id) : n.kind === "group" || n.kind === "sleeps";
   }
 
   function seriesChildren(n) {
@@ -1325,6 +1365,8 @@
       pinned: inLib && !!lib[it.key].pinned,
       seenInfo,
       sleepInfo,
+      meta: it.info || "",
+      pct: it.pct || 0,
       children: it.kind === "film" ? null : (n) => seriesChildren(n),
     };
   }
@@ -1340,11 +1382,12 @@
       title: e.title,
       href: e.lastUrl,
       seriesUrl: e.seriesUrl,
-      type: TYPE_LABEL[e.key.split("/")[0]] || "",
-      kind: e.key.startsWith("filme/") ? "film" : "series",
+      type: typeLabel(e.key.split("/")[0]),
+      kind: kindOf(e.key.split("/")[0]),
       paid: false,
     }));
-    if (mine.length) groups.push({ name: "★ Meine Serien", items: mine });
+    const sleepLog = loadSleepLog();
+    if (mine.length || sleepLog.length) groups.push({ name: `★ ${LIB}`, items: mine, sleepLog });
 
     // Serien-Übersicht offen? Dann die Serie selbst ganz oben, aufgeklappt.
     const here = SITE.parse(location);
@@ -1355,8 +1398,8 @@
         title: bestTitle(here),
         href: here.seriesUrl,
         seriesUrl: here.seriesUrl,
-        type: TYPE_LABEL[type] || humanize(type),
-        kind: type === "filme" ? "film" : "series",
+        type: typeLabel(type),
+        kind: kindOf(type),
         paid: false,
       };
       groups.push({ name: "Diese Seite", items: [it], autoOpen: true });
@@ -1382,7 +1425,7 @@
       const gid = "g:" + g.name;
       let items = g.items.filter(match);
       // Eigene Liste nie filtern – da steht nur, was du selbst willst
-      if (words.length && g.name !== "★ Meine Serien") {
+      if (words.length && g.name !== `★ ${LIB}`) {
         if (hit(g.name)) {
           hiddenCat += items.length;
           continue;
@@ -1401,10 +1444,29 @@
         hiddenPaid += items.filter((i) => i.paid).length;
         items = items.filter((i) => !i.paid);
       }
-      if (!items.length) continue;
+      const sleepNode =
+        g.sleepLog && g.sleepLog.length && !tokens.length
+          ? {
+              id: "sleep",
+              kind: "sleeps",
+              label: "💤 Sleep-Timer",
+              meta: "Enter = ab Timer-Start weiterschauen",
+              children: () =>
+                g.sleepLog.slice(0, 5).map((e) => ({
+                  id: "sleep/" + e.setTs,
+                  kind: "sleepentry",
+                  label: `${e.title}${e.ep ? "  " + e.ep : ""}`,
+                  meta: sleepLogText(e),
+                  href: e.setUrl,
+                  sleepEntry: e,
+                })),
+            }
+          : null;
+      if (!items.length && !sleepNode) continue;
       total += items.length;
       const color = BRANCH_COLORS[nodes.length % BRANCH_COLORS.length];
       const kids = items.map((it) => itemNode(gid, it, lib));
+      if (sleepNode) kids.unshift(sleepNode);
       if (g.autoOpen && !openState.has(kids[0].id)) openState.set(kids[0].id, true);
       const limited = !tokens.length && !showAll.has(gid) && kids.length > GROUP_PREVIEW + 2;
       nodes.push({
@@ -1448,12 +1510,13 @@
   // pro Kachel, deshalb Stichwörter.
   const HIDE_PRESETS = {
     sport: { label: "Sport", words: ["sport", "fussball", "bundesliga", "nfl", "boxen", "formel 1", "darts"] },
-    news: { label: "News", words: ["news", "nachrichten", "newstime", "rtl aktuell", "punkt 12"] },
+    news: { label: "News", words: ["news", "nachrichten", "newstime", "rtl aktuell", "punkt 12", "tagesschau", "tagesthemen", "heute journal"] },
     kids: { label: "Kinder", words: ["kids", "kinder", "junior", "cartoon"] },
     reality: { label: "Reality", words: ["reality", "dating", "love island", "bachelor", "promi"] },
     doku: { label: "Doku", words: ["doku", "dokumentation", "reportage"] },
     talk: { label: "Talk", words: ["talk"] },
     shopping: { label: "Shopping", words: ["shopping"] },
+    shorts: { label: "Shorts", words: ["shorts"] },
   };
 
   function hideWords() {
@@ -1497,7 +1560,7 @@
         ts: Date.now(),
       };
       saveLib(lib);
-      toast(`„${it.title}“ → Meine Serien`);
+      toast(`„${it.title}“ → ${LIB}`);
     } else if (!e.pinned) {
       togglePin(it.key);
       toast(`„${it.title}“ angepinnt 📌`);
@@ -1515,7 +1578,7 @@
       toast(`„${it.title}“ gelöst`);
     } else {
       removeEntry(it.key);
-      toast(`„${it.title}“ aus Meine Serien entfernt`);
+      toast(`„${it.title}“ aus ${LIB} entfernt`);
     }
   }
 
@@ -1662,6 +1725,8 @@
       if (n.kind === "more") {
         showAll.add(n.group);
         render(true);
+      } else if (n.sleepEntry) {
+        resumeSleep(n.sleepEntry);
       } else if (overview && n.item && (n.kind === "series" || n.kind === "film")) {
         go(n.href || n.item.seriesUrl);
       } else if (n.children) {
@@ -1789,7 +1854,10 @@
         libPlus(node);
         render(true);
       } else if ((e.key === "-" || e.code === "NumpadSubtract") && node) {
-        libMinus(node);
+        if (node.sleepEntry) {
+          removeSleepLog(node.sleepEntry.setTs);
+          toast("💤 Eintrag entfernt");
+        } else libMinus(node);
         render(true);
       } else if (e.altKey && e.code === "KeyP") {
         paidBtn.click();
@@ -1928,6 +1996,10 @@
     if (next === undefined) {
       saveSleep(null);
       toast("💤 Sleep-Timer aus");
+    } else if (cur) {
+      // Nur die Dauer ändern – der Startpunkt (Folge + Zeit) bleibt der vom ersten Z
+      saveSleep({ ...cur, step: next, until: next === "ep" ? 0 : Date.now() + next * 60000, warned: false });
+      toast(next === "ep" ? "💤 Stopp am Ende dieser Folge" : `💤 Sleep-Timer: ${next} Min`);
     } else {
       const v = findVideo();
       const info = SITE.parse(location);
@@ -1943,10 +2015,89 @@
         src: watching ? v.currentSrc || "" : "",
         warned: false,
       });
-      if (watching) upsertCurrent({ sleepSet: { path: location.pathname, ts: Date.now() } });
+      const setTs = Date.now();
+      const setPos = v ? Math.floor(v.currentTime) : 0;
+      const entry = watching ? upsertCurrent({ sleepSet: { path: location.pathname, ts: setTs } }) : null;
+      const st = loadSleep();
+      st.setTs = setTs;
+      saveSleep(st);
+      pushSleepLog({
+        key: entry ? entry.key : "",
+        title: entry ? entry.title : cleanTitle(document.title),
+        ep: entry ? epLabel(epId(location.pathname, entry.seriesUrl)) : "",
+        setUrl: location.href,
+        setPos,
+        setTs,
+      });
       toast(next === "ep" ? "💤 Stopp am Ende dieser Folge" : `💤 Sleep-Timer: ${next} Min`);
     }
     sleepTick();
+  }
+
+  // Verlauf der letzten Sleep-Timer (neueste zuerst) → eigener Punkt
+  // „💤 Sleep-Timer“ in der eigenen Liste und im Baum; Enter springt genau
+  // an die Stelle, an der der Timer gestellt wurde.
+  function loadSleepLog() {
+    try {
+      return JSON.parse(GM_getValue("sleepLog", "[]")) || [];
+    } catch {
+      return [];
+    }
+  }
+  function saveSleepLog(log) {
+    try {
+      GM_setValue("sleepLog", JSON.stringify(log.slice(0, 10)));
+    } catch {}
+  }
+  function pushSleepLog(e) {
+    saveSleepLog([e, ...loadSleepLog()]);
+  }
+  function finishSleepLog(setTs, stop) {
+    const log = loadSleepLog();
+    const e = log.find((x) => x.setTs === setTs);
+    if (!e) return;
+    e.stopUrl = location.href;
+    e.stopPos = stop.pos;
+    e.stopTs = stop.ts;
+    saveSleepLog(log);
+  }
+  function removeSleepLog(setTs) {
+    saveSleepLog(loadSleepLog().filter((x) => x.setTs !== setTs));
+  }
+  function sleepLogText(e) {
+    return (
+      `gestellt bei ${fmtTime(e.setPos)} · ${relTime(e.setTs)}` +
+      (e.stopTs ? ` · ⏹ ${e.stopPos >= 0 ? "bei " + fmtTime(e.stopPos) : "Folgenende"}` : "")
+    );
+  }
+
+  // Weiterschauen ab Timer-Start: Seite öffnen, Position merken; sleepTick
+  // spult hin, sobald das Hauptvideo da ist (und nochmal, falls der Player
+  // selbst an seine eigene Fortsetzen-Stelle springt).
+  function resumeSleep(e) {
+    try {
+      const u = new URL(e.setUrl);
+      GM_setValue("seek", JSON.stringify({ path: u.pathname, key: SITE.parse(u)?.key || "", pos: e.setPos, until: Date.now() + 600000 }));
+    } catch {}
+    go(e.setUrl);
+  }
+  function seekTick(v) {
+    let sk = null;
+    try {
+      sk = JSON.parse(GM_getValue("seek", "null"));
+    } catch {}
+    if (!sk) return;
+    const done = () => GM_setValue("seek", "null");
+    if (Date.now() > sk.until) return done();
+    const here = location.pathname === sk.path && (!sk.key || SITE.parse(location)?.key === sk.key);
+    if (!here || !v || !isMainVideo(v) || v.readyState < 1) return;
+    if (Math.abs(v.currentTime - sk.pos) > 15) {
+      v.currentTime = sk.pos;
+      if (!sk.at) toast(`💤 weiter ab ${fmtTime(sk.pos)}`);
+    }
+    sk.at = sk.at || Date.now();
+    if (Date.now() - sk.at > 6000) return done();
+    GM_setValue("seek", JSON.stringify(sk));
   }
 
   function renderSleep(st) {
@@ -1966,6 +2117,7 @@
   function sleepTick() {
     const st = loadSleep();
     const v = findVideo();
+    seekTick(v);
     renderSleep(st);
     if (!st) return;
     const left = st.step === "ep" ? Infinity : st.until - Date.now();
@@ -1998,6 +2150,7 @@
       st.step === "ep"
         ? { path: st.setPath, ts: Date.now(), pos: -1 }
         : { path: location.pathname, ts: Date.now(), pos: v ? Math.floor(v.currentTime) : -1 };
+    finishSleepLog(st.setTs, stop);
     if (st.step === "ep" && st.setKey) updateEntry(st.setKey, { sleepStop: stop });
     else if (SITE.parse(location) && v && isMainVideo(v)) upsertCurrent({ sleepStop: stop });
     // Pausieren allein reicht nicht: manche Player starten von selbst wieder
@@ -2027,13 +2180,13 @@
         const key = (e.key || "").toLowerCase();
         const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
         let handled = true;
-        if (e.key === "/" && plain) {
+        if (e.key === "/" && plain && FEAT.slash) {
           overlayOpen() ? closeOverlay() : openOverlay();
         } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === "KeyK") {
           listViewOpen() ? closeListView() : openListView(CONFIG.treeLayout);
         } else if (plain && key === "z") {
           cycleSleep(e.shiftKey);
-        } else if (plain && !e.shiftKey && key === "t") {
+        } else if (plain && !e.shiftKey && key === "t" && FEAT.theater) {
           toggleTheater();
         } else if (e.key === "Escape" && overlayOpen()) {
           closeOverlay();
@@ -2058,8 +2211,10 @@
   // ═══════════════════════════════════════════════
   function boot() {
     root = document.documentElement;
-    installPageHook(); // so früh wie möglich, vor dem Player-Code
-    setupFullscreenSync();
+    if (FEAT.fsHook) {
+      installPageHook(); // so früh wie möglich, vor dem Player-Code
+      setupFullscreenSync();
+    }
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", init, { once: true });
     } else {
@@ -2074,7 +2229,7 @@
     setupWatchTracking();
     setupAutoListView();
     setupSleepTimer();
-    setInterval(theaterTick, 700);
+    if (FEAT.theater) setInterval(theaterTick, 700);
     setInterval(ensureHost, 3000); // falls die Seite <html>-Kinder aufräumt
     theaterTick();
     log("geladen");

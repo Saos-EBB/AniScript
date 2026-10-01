@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         JoynScript
+// @name         YouTubeScript
 // @namespace    SaosOne
-// @version      1.5.0
-// @description  Comfort für Joyn: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
-// @match        *://joyn.de/*
-// @match        *://*.joyn.de/*
+// @version      1.0.0
+// @description  YouTube als Text-Baum (Git-Optik): Reihen/Videos mit Kanal, Dauer, Fortschritt; eigene Liste (★) mit Verlauf, Sleep-Timer (Z) mit Weiterschauen ab Timer-Start, Filter für Shorts/News/… Ohne externe Libraries.
+// @match        *://www.youtube.com/*
+// @match        *://youtube.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        unsafeWindow
@@ -13,53 +13,20 @@
 // ==/UserScript==
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  JoynScript – Comfort-Features für joyn.de
- *  Schwester-Script: RTLPlusScript (identischer Kern, nur SITE-Block anders)
- * ═══════════════════════════════════════════════════════════════════════
+ *  YouTubeScript – YouTube als strukturierter Text-Baum
+ *  Gleicher Kern wie JoynScript/RTLPlusScript, nur der SITE-Block ist anders.
+ *  Details zum Aufbau (selektor-frei, Shadow-DOM, Baum) siehe JoynScript.
  *
- *  WARUM DAS SCRIPT SO GEBAUT IST, WIE ES GEBAUT IST
- *
- *  1) KEINE SEITEN-SELEKTOREN
- *     - Joyn/RTL+ sind React-SPAs mit generierten Klassennamen, die sich
- *       bei jedem Deploy ändern. Deshalb wird der Player NUR über das
- *       <video>-Element gefunden: größtes <video> auf der Seite, dann so
- *       weit nach oben laufen, wie die Eltern ungefähr gleich groß sind
- *       (= Player-Wrapper inkl. Controls-Overlay).
- *     - Der Player ist hier NICHT in einem iframe (anders als bei VOE in
- *       AniScript) → @noframes, kein postMessage nötig.
- *
- *  2) VOLLBILD + FOLGENWECHSEL
- *     - Problem: Der Player macht requestFullscreen() auf seinen Container.
- *       Beim Folgenwechsel wird dieser Container (oder das <video>) von
- *       React ersetzt → der Browser beendet das Vollbild.
- *     - Lösung: requestFullscreen() des Players wird abgefangen und auf
- *       <html> umgeleitet. <html> wird beim Folgenwechsel nie ersetzt,
- *       das Vollbild bleibt. Der Player wird per CSS (Theater-Modus) über
- *       den ganzen Viewport gelegt, und dieser Theater-Modus wird nach
- *       jedem DOM-Umbau automatisch neu angewendet.
- *     - exitFullscreen() vom Player OHNE User-Geste (= automatischer
- *       Folgenwechsel) wird ignoriert. Mit User-Geste (Klick auf den
- *       Vollbild-Button) geht es normal raus. Esc geht immer.
- *     - Der Hook muss im Seiten-Kontext laufen (nicht in der Userscript-
- *       Sandbox), sonst sieht der Player die gepatchten Prototypen nicht.
- *       Deshalb: <script>-Injektion, Fallback unsafeWindow.
- *     - Macht der Folgenwechsel doch einen echten Seiten-Reload, ist das
- *       Vollbild technisch weg (Browser-Regel). Dann bleibt der Theater-
- *       Modus per sessionStorage erhalten und der NÄCHSTE Klick/Tastendruck
- *       holt das echte Vollbild zurück (braucht eine User-Geste).
- *     - Alternativ: T = Theater-Modus dauerhaft + F11 (Browser-Vollbild,
- *       hängt an keinem Element, überlebt alles).
- *
- *  3) „MEINE SERIEN“ STATT DER SEITEN-SUCHE
- *     - Was länger als minWatchSec läuft (Video > 5 Min, also keine
- *       Trailer/Werbung), wird lokal gemerkt: Serie, letzte Folge, Zeit.
- *     - / oder Strg+K öffnet die Liste mit Sofort-Filter. Enter = weiter-
- *       schauen. Kein Treffer → Seiten-Suche oder Google site:-Suche.
- *     - Anpinnen (📌) hält Titel oben, in eigener Reihenfolge (↑).
- *
- *  4) TRUSTED TYPES / CSP
- *     - Kein innerHTML (könnte an Trusted Types scheitern), UI komplett
- *       per createElement in einem Shadow-DOM (Seiten-CSS kommt nicht rein).
+ *  YouTube-Besonderheiten:
+ *   - Kein Vollbild-Hook und kein eigenes T bzw. „/“: YouTube hat selbst
+ *     Theater-Modus (T), Vollbild und „/“ für die Suche.
+ *   - Titel kommen aus dem title-Attribut des Titel-Links (der Thumbnail-
+ *     Link davor hat keinen Titel → linkTitle liefert dort "").
+ *   - Kanal, Dauer, Aufrufe/Alter und der rote Fortschrittsbalken werden
+ *     aus der Kachel gelesen (itemInfo). Die Element-Namen sind YouTubes
+ *     Custom Elements (ytd-…/yt-lockup-…); ändert YouTube die, fehlt nur
+ *     die Zusatzinfo, der Baum funktioniert weiter.
+ *   - Video gilt ab 60 s als Hauptinhalt (Verlauf, Sleep-Timer).
  * ═══════════════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -69,40 +36,62 @@
   // SITE – der einzige Teil, der sich zwischen den Scripts unterscheidet
   // ═══════════════════════════════════════════════
   const SITE = {
-    name: "Joyn",
-    // Serien-/Film-Seiten → Schlüssel für die Liste.
-    // Beispiele: /serien/<slug>, /serien/<slug>/1-3-<folge>,
-    //            /play/serien/<slug>/1-3-<folge>, /filme/<slug>
+    name: "YouTube",
+    libName: "Meine Liste",
+    leafTypes: ["v", "s", "p"],
+    typeLabels: { v: "", s: "Short", p: "Playlist" }, // normale Videos ohne Etikett
+    firstGroup: "Empfohlen",
+    minMainSec: 60,
+    features: { fsHook: false, theater: false, slash: false }, // kann YouTube selbst
+    // /watch?v=ID → Video, /shorts/ID → Short, /playlist?list=ID → Playlist.
+    // Kanal-Links bewusst NICHT: die stehen in jeder Kachel und würden den
+    // Baum mit Duplikaten fluten.
     parse(url) {
-      const m = url.pathname.match(
-        /^\/(?:play\/)?(serien|filme|compilation|sport)\/([^/?#]+)/i,
+      const q = new URLSearchParams(url.search);
+      if (url.pathname === "/watch" && q.get("v")) {
+        return { key: `v/${q.get("v")}`, seriesUrl: `${url.origin}/watch?v=${q.get("v")}`, title: q.get("v") };
+      }
+      const m = url.pathname.match(/^\/shorts\/([\w-]{6,})/);
+      if (m) return { key: `s/${m[1]}`, seriesUrl: `${url.origin}/shorts/${m[1]}`, title: m[1] };
+      if (url.pathname === "/playlist" && q.get("list")) {
+        return { key: `p/${q.get("list")}`, seriesUrl: `${url.origin}/playlist?list=${q.get("list")}`, title: q.get("list") };
+      }
+      return null;
+    },
+    isWatchUrl: (url) => url.pathname === "/watch" || url.pathname.startsWith("/shorts/"),
+    isSearchUrl: (url) => url.pathname === "/results",
+    searchUrl: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+    episodes: () => ({ eps: [], seasons: [] }), // keine Staffeln
+    paidRe: /Nur für Kanalmitglieder|Mitgliedern vorbehalten|Members only/i,
+    paidClassRe: null, // YouTube-Klassennamen enthalten oft „subscribe“ → nicht raten
+    paidLabel: "Mitglieder",
+    googleSite: "youtube.com",
+    titleSuffix: /\s*-\s*YouTube\s*$/i,
+    // Nur echte Titel-Links liefern einen Titel; der Thumbnail-Link liefert ""
+    linkTitle(a) {
+      const t =
+        a.getAttribute("title") ||
+        a.querySelector("#video-title")?.textContent ||
+        (/title/i.test(a.id + " " + (typeof a.className === "string" ? a.className : "")) ? a.textContent : "");
+      return (t || "").trim().replace(/\s+/g, " ");
+    },
+    itemInfo(a) {
+      const tile = a.closest(
+        "ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, " +
+          "ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytd-reel-item-renderer, " +
+          "yt-lockup-view-model, ytm-shorts-lockup-view-model",
       );
-      if (!m) return null;
-      const type = m[1].toLowerCase();
-      const slug = m[2];
+      if (!tile) return {};
+      const txt = (sel) => (tile.querySelector(sel)?.textContent || "").trim().replace(/\s+/g, " ");
+      const channel = txt("ytd-channel-name #text, #channel-name #text, ytd-channel-name a, [class*=metadata-text]");
+      const dur = txt("ytd-thumbnail-overlay-time-status-renderer #text, ytd-thumbnail-overlay-time-status-renderer, [class*=badge-shape] [class*=text]");
+      const line = txt("#metadata-line");
+      const prog = tile.querySelector("ytd-thumbnail-overlay-resume-playback-renderer #progress, [class*=WatchedProgressBarSegment]");
       return {
-        key: `${type}/${slug}`,
-        seriesUrl: `${url.origin}/${type}/${slug}`,
-        title: humanize(slug),
+        info: [channel, dur, line].filter(Boolean).join(" · "),
+        pct: prog ? Math.round(parseFloat(prog.style.width) || 0) : 0,
       };
     },
-    // Abspiel-Seiten. Zusätzlich gilt überall: Video > 5 Min = Hauptinhalt.
-    isWatchUrl: (url) => /^\/play\//i.test(url.pathname),
-    isSearchUrl: (url) => /^\/suche/i.test(url.pathname),
-    searchUrl: (q) => `https://www.joyn.de/suche?q=${encodeURIComponent(q)}`,
-    // Folgen-URLs im rohen HTML der Serienseite: /serien/<slug>/<staffel>-<folge>-<titel>
-    episodes(text, info) {
-      const base = escRe(new URL(info.seriesUrl).pathname);
-      const eps = [];
-      for (const m of text.matchAll(new RegExp(`(/play)?${base}/(\\d+)-(\\d+)-([a-z0-9-]+)`, "gi"))) {
-        eps.push({ season: +m[2], ep: +m[3], slug: m[4], path: m[0], preferred: !!m[1] });
-      }
-      return { eps, seasons: [] };
-    },
-    paidRe: /PLUS\+|Joyn\s?PLUS/, // Badge-Text auf Bezahl-Kacheln
-    paidLabel: "PLUS+",
-    googleSite: "joyn.de",
-    titleSuffix: /\s*[|–—-]\s*Joyn\b.*$/i,
   };
 
   // ═══════════════════════════════════════════════
