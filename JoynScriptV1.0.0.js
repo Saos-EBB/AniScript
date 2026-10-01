@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JoynScript
 // @namespace    SaosOne
-// @version      1.4.0
+// @version      1.4.1
 // @description  Comfort für Joyn: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
 // @match        *://joyn.de/*
 // @match        *://*.joyn.de/*
@@ -570,6 +570,9 @@
     const [s, e] = id.split("-");
     return `S${s.padStart(2, "0")}E${e.padStart(2, "0")}`;
   }
+  const seenPct = (x) => (typeof x === "number" ? x : x?.p || 0);
+  const seenTs = (x) => (typeof x === "number" ? 0 : x?.t || 0);
+
   function fmtTime(sec) {
     return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
   }
@@ -599,7 +602,7 @@
       if (id) {
         const lib = loadLib();
         const seen = { ...(lib[entry.key].seen || {}) };
-        seen[id] = Math.max(pct, seen[id] || 0);
+        seen[id] = { p: Math.max(pct, seenPct(seen[id])), t: Date.now() };
         const keys = Object.keys(seen);
         if (keys.length > 500) delete seen[keys[0]];
         lib[entry.key].seen = seen;
@@ -1255,14 +1258,18 @@
     const setId = ent.sleepSet ? epId(ent.sleepSet.path, su) : "";
     const stopId = ent.sleepStop ? epId(ent.sleepStop.path, su) : "";
     return seasons.map((s) => {
-      const done = [...s.eps.keys()].filter((ep) => (seen[`${s.n}-${ep}`] || 0) >= 90).length;
+      const done = [...s.eps.keys()].filter((ep) => seenPct(seen[`${s.n}-${ep}`]) >= 90).length;
       const count = s.eps.size ? `${s.eps.size} ${s.eps.size === 1 ? "Folge" : "Folgen"}` : "";
+      // Zeitpunkt pro Folge; für die zuletzt gesehene notfalls der Serien-Zeitstempel (Altdaten)
+      const tsOf = (id) => seenTs(seen[id]) || (id === lastId ? ent.ts || 0 : 0);
+      const seasonTs = Math.max(0, ...Object.keys(seen).filter((k) => k.startsWith(`${s.n}-`)).map(tsOf), lastId.startsWith(`${s.n}-`) ? tsOf(lastId) : 0);
       return {
         id: `${n.id}/s${s.n}`,
         kind: "season",
         label: `Staffel ${s.n}`,
         meta: count + (done ? ` · ${done} gesehen` : ""),
         last: lastId.startsWith(`${s.n}-`),
+        seenInfo: seasonTs ? `⏱ ${relTime(seasonTs)}` : "",
         item: n.item,
         season: s,
         children: () => {
@@ -1281,7 +1288,8 @@
                 href: e.href,
                 item: n.item,
                 last: id === lastId,
-                pct: seen[id] || 0,
+                pct: seenPct(seen[id]),
+                seenInfo: tsOf(id) ? `⏱ ${relTime(tsOf(id))}` : "",
                 sleepSet: id === setId,
                 sleepStop: id === stopId ? ent.sleepStop : null,
               };
@@ -1889,14 +1897,14 @@
 
   // ═══════════════════════════════════════════════
   // SLEEP-TIMER (Z) – Z schaltet weiter: 15 → 30 → 45 → 60 → 90 Min →
-  // Ende dieser Folge → aus. Shift+Z = aus. Zustand im GM-Storage, damit er
+  // Ende dieser Folge → aus. Shift+Z = aus. Bei Ablauf: Marke setzen und
+  // auf about:blank weiterleiten. Zustand im GM-Storage, damit er
   // auch einen Folgenwechsel mit Seiten-Reload übersteht. In „Meine Serien“
   // wird gemerkt, bei welcher Folge er gestellt wurde (💤) und wo er die
   // Wiedergabe gestoppt hat (⏹ + Zeitpunkt).
   // ═══════════════════════════════════════════════
   const SLEEP_STEPS = [15, 30, 45, 60, 90, "ep"];
   let sleepEl = null;
-  let sleepHoldUntil = 0; // kurz nach dem Stopp: Autoplay der nächsten Folge abfangen
 
   function loadSleep() {
     try {
@@ -1926,6 +1934,10 @@
         until: next === "ep" ? 0 : Date.now() + next * 60000,
         setPath: location.pathname,
         setKey: watching ? info.key : "",
+        // Fingerabdruck der laufenden Folge: Joyn wechselt die Folge evtl.
+        // im selben Player, ohne dass sich die URL ändert
+        dur: watching ? v.duration : 0,
+        src: watching ? v.currentSrc || "" : "",
         warned: false,
       });
       if (watching) upsertCurrent({ sleepSet: { path: location.pathname, ts: Date.now() } });
@@ -1951,7 +1963,6 @@
   function sleepTick() {
     const st = loadSleep();
     const v = findVideo();
-    if (Date.now() < sleepHoldUntil && v && !v.paused) v.pause();
     renderSleep(st);
     if (!st) return;
     const left = st.step === "ep" ? Infinity : st.until - Date.now();
@@ -1960,10 +1971,25 @@
       saveSleep(st);
       toast("💤 Noch 1 Minute – Z verlängert", 4000);
     }
-    const fire = st.step === "ep" ? location.pathname !== st.setPath || !!(v && v.ended) : left <= 0;
+    let fire = left <= 0;
+    if (st.step === "ep") {
+      const main = v && isMainVideo(v);
+      if (main && !st.dur) {
+        // Timer wurde während Werbung/Laden gestellt → Fingerabdruck nachholen
+        st.dur = v.duration;
+        st.src = v.currentSrc || "";
+        saveSleep(st);
+      }
+      fire =
+        location.pathname !== st.setPath ||
+        !!(v && v.ended) ||
+        // andere Folge im selben Player (Werbung ignorieren: nur Hauptinhalt zählt)
+        !!(main && st.dur && (Math.abs(v.duration - st.dur) > 5 || (st.src && v.currentSrc && v.currentSrc !== st.src))) ||
+        // Abspann: kurz vor Schluss, bevor der Player die nächste Folge startet
+        !!(main && v.duration - v.currentTime < 10);
+    }
     if (!fire) return;
     saveSleep(null);
-    sleepHoldUntil = Date.now() + 15000;
     if (v && !v.paused) v.pause();
     const stop =
       st.step === "ep"
@@ -1971,16 +1997,14 @@
         : { path: location.pathname, ts: Date.now(), pos: v ? Math.floor(v.currentTime) : -1 };
     if (st.step === "ep" && st.setKey) updateEntry(st.setKey, { sleepStop: stop });
     else if (SITE.parse(location) && v && isMainVideo(v)) upsertCurrent({ sleepStop: stop });
-    renderSleep(null);
-    toast("💤 Gute Nacht – Wiedergabe pausiert", 8000);
+    // Pausieren allein reicht nicht: manche Player starten von selbst wieder
+    // oder spielen die nächste Folge. Leere Seite = garantiert Ruhe.
+    // (Zurück-Taste im Browser bringt dich wieder hin.)
+    location.href = "about:blank";
   }
 
   function setupSleepTimer() {
     setInterval(sleepTick, 1000);
-    // Wer sich nach dem Stopp rührt, darf wieder abspielen
-    const wake = () => (sleepHoldUntil = 0);
-    window.addEventListener("pointerdown", wake, { capture: true, passive: true });
-    window.addEventListener("keydown", wake, { capture: true, passive: true });
   }
 
   // ═══════════════════════════════════════════════
