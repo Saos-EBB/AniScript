@@ -18,24 +18,34 @@ Zwei Scripts mit identischem Kern, nur der `SITE`-Block oben ist pro Seite ander
 
 - **Vollbild, das den Folgenwechsel übersteht.** Den normalen Vollbild-Button des Players (oder dessen `F`) einfach benutzen. Das Script leitet das Vollbild auf `<html>` um und legt den Player per CSS über den ganzen Bildschirm. Wenn der Player beim Folgenwechsel neu gebaut wird, bleibt das Vollbild an, und der Theater-Modus wird automatisch neu angewendet.
 - **Theater-Modus `T`.** Player füllt dauerhaft das Fenster, auch nach Reloads. Zusammen mit `F11` ergibt das echtes Vollbild, das wirklich alles übersteht.
-- **„Meine Serien“ (`/` oder `Strg+K`, oder ★ unten links).** Alles, was du länger als 20 s schaust (nur Videos > 5 Min, also keine Trailer oder Werbung), landet automatisch in einer lokalen Liste: zuletzt geschaut oben, letzte Folge, Fortschrittsbalken. Tippen filtert sofort, `Enter` öffnet die letzte Folge.
+- **„Meine Serien“ (`/` oder `Strg+K`).** Alles, was du länger als 20 s schaust (nur Videos > 5 Min, also keine Trailer oder Werbung), landet automatisch in einer lokalen Liste: zuletzt geschaut oben, letzte Folge, Fortschrittsbalken. Tippen filtert sofort, `Enter` öffnet die letzte Folge.
   - 📌 pinnt Titel dauerhaft nach oben, ↑ sortiert die angepinnten
   - „+ Diese Seite merken“ nimmt eine Serie auf, ohne sie zu schauen
   - Kein Treffer? `Enter` / `Strg+Enter` → Seiten-Suche, oder **Google** mit `site:`, das findet oft mehr als die Seiten-Suche
   - ⚙ im Overlay: Vollbild-Umleitung an/aus, Theater dauerhaft, ★-Button, Liste leeren
-- **Baum-Ansicht statt Kachel-Wand (`L`).** Die ganze Seite als schwarzer Text-Baum im `git log --graph`-Stil: jede Reihe der Seite (Weiterschauen, Neu, Beliebt …) ist ein Ast, Serien klappen auf bis zu Staffel und Folge. Ganz oben hängen „★ Meine Serien“, auf einer Serienseite die Serie selbst schon aufgeklappt. ▶ markiert die zuletzt gesehene Folge.
-  - Öffnet sich automatisch auf allen Übersichts- und Suchseiten (nicht beim Abspielen). `Esc` zeigt die normale Seite, `L` holt den Baum zurück. Automatik abschaltbar unter ⚙.
-  - **Paid ein/aus:** `Alt+P` oder der Button unten blendet Bezahl-Titel (Joyn PLUS+ / RTL+ Premium) aus; eingeblendet stehen sie mit `[PLUS+]` / `[Premium]` da.
-  - Tippen filtert, `↑↓` wählen, `→`/`←` auf-/zuklappen, `Enter` öffnet (Serie aus „Meine Serien“ = weiterschauen), `Shift+Enter` öffnet die Serien-Übersicht.
-  - Folgen werden beim Aufklappen aus der Serienseite gelesen, auch wenn die Links nur im eingebetteten JSON der Seite stehen. Lange Reihen zeigen 12 Titel, Rest hinter „… N weitere“. „mehr laden ↓“ scrollt die Seite im Hintergrund, damit sie weitere Reihen nachlädt.
+- **Baum-Ansicht statt Kachel-Wand (`Alt+L`).** Die ganze Seite als Text-Baum im `git log --graph`-Stil: jede Reihe der Seite (Weiterschauen, Neu, Beliebt …) ist ein Ast, Serien klappen auf bis zu Staffel und Folge. Ganz oben hängen „★ Meine Serien“, auf einer Serienseite die Serie selbst schon aufgeklappt. ▶ markiert die zuletzt gesehene Folge, ★ = in deiner Liste, 📌 = angepinnt.
+  - Öffnet sich automatisch auf Übersichts- und Suchseiten (nicht beim Abspielen, abschaltbar). `Esc` zeigt die normale Seite.
+  - Komplett per Tastatur: `↑↓` wählen, `→`/`←` auf-/zuklappen, **`Leertaste`/`Enter`** klappen auf/zu bzw. spielen Folgen und Filme ab, `Shift+Enter` öffnet eine Serie direkt (aus „Meine Serien“ = weiterschauen).
+  - **`+`** nimmt den Titel in „Meine Serien“ auf, nochmal `+` pinnt ihn an. **`−`** löst den Pin, nochmal `−` entfernt ihn.
+  - Tippen filtert (Leertaste tippt dann ganz normal), `Strg+Enter` sucht auf der Seite.
+  - Folgen werden beim Aufklappen aus der Serienseite gelesen, auch wenn die Links nur im eingebetteten JSON stehen. Lange Reihen zeigen 12 Titel, Rest hinter „… N weitere“. „mehr laden ↓“ scrollt die Seite im Hintergrund, damit sie weitere Reihen nachlädt.
+- **Sidebar (★ unten links).** Derselbe Baum als breite Sidebar rechts neben der normalen Seite. Klick daneben schließt sie, außer sie ist fixiert.
+- **Einstellungen im Baum (`Alt+S` oder ⚙):**
+  - **Ausblenden:** Sport, News, Kinder, Reality, Doku, Talk, Shopping per Häkchen, plus eigene Stichwörter (kommagetrennt). Gilt für Reihen-Namen, Titel, Typ und URL (z. B. `/sport/…`). Die Seiten liefern pro Kachel kein echtes Genre, deshalb Stichwörter. „Meine Serien“ wird nie gefiltert.
+  - **Paid ein/aus** (`Alt+P`): Joyn PLUS+ / RTL+ Premium; eingeblendet stehen sie mit `[PLUS+]` / `[Premium]` da.
+  - **Hintergrund:** Schwarz, Anthrazit, Nachtblau, Glas (durchscheinend) oder eigene Farbe.
+  - **Sidebar fixieren:** bleibt offen, auch nach Neuladen, die Seite rückt nach links. Im Theater-Modus automatisch ausgeblendet.
 
 ### Tasten
 
 | Taste | Aktion |
 |-------|--------|
 | `/`, `Strg+K` | „Meine Serien“ öffnen/schließen |
-| `L` | Baum-Ansicht an/aus |
-| `Alt+P` (im Baum) | Bezahl-Titel ein-/ausblenden |
+| `Alt+L` | Baum-Ansicht (Vollbild) an/aus |
+| ★-Button | Sidebar an/aus |
+| im Baum: `Leertaste`/`Enter` | auf-/zuklappen, Folge/Film abspielen |
+| im Baum: `+` / `−` | in Meine Serien / anpinnen · lösen / entfernen |
+| im Baum: `Alt+P` / `Alt+S` | Bezahl-Titel ein/aus · Einstellungen |
 | `T` | Theater-Modus an/aus |
 | `Esc` | Overlay schließen / Vollbild bzw. Theater beenden |
 | Player-Vollbild-Button, `F`, Doppelklick | Vollbild an/aus (wird umgeleitet) |
