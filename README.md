@@ -23,14 +23,19 @@ Zwei Scripts mit identischem Kern, nur der `SITE`-Block oben ist pro Seite ander
   - „+ Diese Seite merken“ nimmt eine Serie auf, ohne sie zu schauen
   - Kein Treffer? `Enter` / `Strg+Enter` → Seiten-Suche, oder **Google** mit `site:`, das findet oft mehr als die Seiten-Suche
   - ⚙ im Overlay: Vollbild-Umleitung an/aus, Theater dauerhaft, ★-Button, Liste leeren
-- **Text-Liste statt Kachel-Wand (`L`).** Alle Titel der aktuellen Seite als schlichte Liste, eine Zeile pro Titel: Typ (Serie/Film), Name, ★ wenn schon in „Meine Serien“. Tippen filtert, `Enter` öffnet. Auf der **Suchseite geht sie automatisch auf** (abschaltbar unter ⚙). Was die Seite nachlädt, erscheint von selbst; „Mehr laden ↓“ scrollt die Seite im Hintergrund, damit weitere Titel kommen.
+- **Baum-Ansicht statt Kachel-Wand (`L`).** Die ganze Seite als schwarzer Text-Baum im `git log --graph`-Stil: jede Reihe der Seite (Weiterschauen, Neu, Beliebt …) ist ein Ast, Serien klappen auf bis zu Staffel und Folge. Ganz oben hängen „★ Meine Serien“, auf einer Serienseite die Serie selbst schon aufgeklappt. ▶ markiert die zuletzt gesehene Folge.
+  - Öffnet sich automatisch auf allen Übersichts- und Suchseiten (nicht beim Abspielen). `Esc` zeigt die normale Seite, `L` holt den Baum zurück. Automatik abschaltbar unter ⚙.
+  - **Paid ein/aus:** `Alt+P` oder der Button unten blendet Bezahl-Titel (Joyn PLUS+ / RTL+ Premium) aus; eingeblendet stehen sie mit `[PLUS+]` / `[Premium]` da.
+  - Tippen filtert, `↑↓` wählen, `→`/`←` auf-/zuklappen, `Enter` öffnet (Serie aus „Meine Serien“ = weiterschauen), `Shift+Enter` öffnet die Serien-Übersicht.
+  - Folgen werden beim Aufklappen aus der Serienseite gelesen, auch wenn die Links nur im eingebetteten JSON der Seite stehen. Lange Reihen zeigen 12 Titel, Rest hinter „… N weitere“. „mehr laden ↓“ scrollt die Seite im Hintergrund, damit sie weitere Reihen nachlädt.
 
 ### Tasten
 
 | Taste | Aktion |
 |-------|--------|
 | `/`, `Strg+K` | „Meine Serien“ öffnen/schließen |
-| `L` | Text-Liste der Titel auf der Seite an/aus |
+| `L` | Baum-Ansicht an/aus |
+| `Alt+P` (im Baum) | Bezahl-Titel ein-/ausblenden |
 | `T` | Theater-Modus an/aus |
 | `Esc` | Overlay schließen / Vollbild bzw. Theater beenden |
 | Player-Vollbild-Button, `F`, Doppelklick | Vollbild an/aus (wird umgeleitet) |
