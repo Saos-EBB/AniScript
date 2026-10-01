@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RTLPlusScript
 // @namespace    SaosOne
-// @version      1.2.0
+// @version      1.3.0
 // @description  Comfort für RTL+: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
 // @match        *://plus.rtl.de/*
 // @grant        GM_getValue
@@ -118,6 +118,10 @@
     minWatchSec: 20, // ab so vielen Sekunden Wiedergabe in die Liste
     treeAuto: true, // Übersichtsseiten automatisch als Baum zeigen (sonst L)
     hidePaid: false, // Bezahl-Titel im Baum ausblenden (Alt+P)
+    hidePresets: [], // ausgeblendete Kategorien (sport, news, …), siehe HIDE_PRESETS
+    hideWords: "", // eigene Ausblende-Stichwörter, kommagetrennt
+    treeBg: "schwarz", // Hintergrund Baum/Sidebar: Preset-Name oder #hex
+    sidePinned: false, // Sidebar fixiert (bleibt offen, Seite rückt zur Seite)
   };
 
   function loadConfig() {
@@ -146,6 +150,7 @@
   const C_ON = P + "-theater-on"; // auf <html>
   const C_ROOT = P + "-theater-root"; // Player-Wrapper
   const C_ANC = P + "-theater-anc"; // alle Vorfahren des Wrappers
+  const C_SIDE = P + "-side-pinned"; // auf <html>: fixierte Sidebar
   const FS_EVENT = P + "-fs"; // Seiten-Hook → Script
   const CARRY_KEY = P + "-carry"; // sessionStorage: Vollbild über Reload
   let root = document.documentElement; // bei document-start evtl. noch null → boot()
@@ -287,6 +292,7 @@
 
   const PAGE_CSS = `
     html.${C_ON}, html.${C_ON} body { overflow: hidden !important; }
+    html.${C_SIDE}:not(.${C_ON}) body { margin-right: 520px !important; }
     .${C_ANC} {
       transform: none !important; filter: none !important;
       contain: none !important; will-change: auto !important;
@@ -657,9 +663,22 @@
     .tlast { color: #3fb950; }
     .tbar { display: flex; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid #21262d; color: #6e7681; font-size: 12px; }
     .tbar .grow { flex: 1; }
-    .tbtn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+    .tbtn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; white-space: nowrap; }
     .tbtn:hover { border-color: #8b949e; color: #fff; }
     .thelp { color: #484f58; font-size: 11px; padding-top: 6px; }
+    .tree.side { left: auto; right: 0; border-left: 1px solid #30363d; box-shadow: -10px 0 30px rgba(0,0,0,.55); }
+    .tree.side .tpage { padding: 14px 12px 8px; font-size: 13px; }
+    .tree.side .thelp { display: none; }
+    :host([data-theater]) .tree.side { display: none; }
+    .tbtn.on { border-color: #3fb950; color: #3fb950; }
+    .tset { border-top: 1px solid #21262d; padding: 8px 4px 4px; font-size: 13px; max-height: 45%; overflow-y: auto; }
+    .tset[hidden] { display: none; }
+    .tset label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; margin: 2px 12px 2px 0; }
+    .tsh { color: #fff; font-weight: 700; margin: 6px 0 4px; }
+    .tchips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-bottom: 4px; }
+    .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+    .twords { flex: 1; min-width: 180px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 4px; padding: 3px 6px; font-size: 13px; }
+    .tset input[type=color] { width: 32px; height: 22px; padding: 0; border: 1px solid #30363d; background: none; cursor: pointer; }
     .tinfo { color: #6e7681; padding: 10px 6px; }
     .toast {
       position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
@@ -708,7 +727,7 @@
       host = document.createElement(P + "-ui");
       shadow = host.attachShadow({ mode: "open" });
       addSheet(shadow, UI_CSS);
-      fab = h("button", { class: "fab", title: "Meine Serien (/ oder Strg+K)", text: "★", onclick: openOverlay });
+      fab = h("button", { class: "fab", title: "Sidebar mit Baum & Meine Serien (Meine Serien-Suche: / oder Strg+K)", text: "★", onclick: () => toggleSidebar() });
       toastEl = h("div", { class: "toast" });
       shadow.append(fab, toastEl);
     }
@@ -720,7 +739,9 @@
 
   function updateFab() {
     if (!fab) return;
-    fab.hidden = !CONFIG.showFab || root.classList.contains(C_ON) || listViewOpen();
+    const theater = root.classList.contains(C_ON);
+    fab.hidden = !CONFIG.showFab || theater || listViewMode() === "full";
+    host.toggleAttribute("data-theater", theater); // blendet die Sidebar im Theater-Modus aus
   }
 
   function toast(text, ms = 1600) {
@@ -848,7 +869,7 @@
     );
     const hint = h("div", {
       class: "hint",
-      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · L Baum-Ansicht · T Theater-Modus",
+      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · Alt+L Baum · ★ Sidebar · T Theater-Modus",
     });
 
     function row(e, i) {
@@ -1213,6 +1234,7 @@
             kind: "episode",
             label: `E${String(e.ep).padStart(2, "0")}  ${e.title}`,
             href: e.href,
+            item: n.item,
             last: new URL(e.href).pathname === lastPath,
           }));
       },
@@ -1231,6 +1253,7 @@
       type: it.type,
       paid: it.paid,
       inLib,
+      pinned: inLib && !!lib[it.key].pinned,
       children: it.kind === "film" ? null : (n) => seriesChildren(n),
     };
   }
@@ -1272,10 +1295,32 @@
 
     let total = 0;
     let hiddenPaid = 0;
+    let hiddenCat = 0;
+    const words = hideWords();
+    const hit = (text) => {
+      const t = norm(text);
+      return words.some((w) => t.includes(w));
+    };
     const nodes = [];
     for (const g of groups) {
       const gid = "g:" + g.name;
       let items = g.items.filter(match);
+      // Eigene Liste nie filtern – da steht nur, was du selbst willst
+      if (words.length && g.name !== "★ Meine Serien") {
+        if (hit(g.name)) {
+          hiddenCat += items.length;
+          continue;
+        }
+        const before = items.length;
+        items = items.filter((i) => {
+          let path = "";
+          try {
+            path = new URL(i.href).pathname.replace(/[-/]/g, " ");
+          } catch {}
+          return !hit(`${i.title} ${i.type} ${path}`);
+        });
+        hiddenCat += before - items.length;
+      }
       if (CONFIG.hidePaid) {
         hiddenPaid += items.filter((i) => i.paid).length;
         items = items.filter((i) => !i.paid);
@@ -1298,7 +1343,7 @@
             : kids,
       });
     }
-    return { nodes, total, hiddenPaid };
+    return { nodes, total, hiddenPaid, hiddenCat };
   }
 
   // Baum → Zeilen mit fertigem Präfix (│ ├─ └─ ┬ ▸)
@@ -1321,11 +1366,91 @@
     return lines;
   }
 
-  // ── Ansicht ───────────────────────────────────────
+  // ── Ausblenden (Settings) ─────────────────────────
+  // Genre-/Kategorie-Filter. Gematcht wird gegen Reihen-Name, Typ, Titel
+  // und URL-Pfad (z. B. /sport/…). Echte Genre-Daten liefert die Seite nicht
+  // pro Kachel, deshalb Stichwörter.
+  const HIDE_PRESETS = {
+    sport: { label: "Sport", words: ["sport", "fussball", "bundesliga", "nfl", "boxen", "formel 1", "darts"] },
+    news: { label: "News", words: ["news", "nachrichten", "newstime", "rtl aktuell", "punkt 12"] },
+    kids: { label: "Kinder", words: ["kids", "kinder", "junior", "cartoon"] },
+    reality: { label: "Reality", words: ["reality", "dating", "love island", "bachelor", "promi"] },
+    doku: { label: "Doku", words: ["doku", "dokumentation", "reportage"] },
+    talk: { label: "Talk", words: ["talk"] },
+    shopping: { label: "Shopping", words: ["shopping"] },
+  };
+
+  function hideWords() {
+    const words = [];
+    for (const k of CONFIG.hidePresets || []) words.push(...(HIDE_PRESETS[k]?.words || []));
+    for (const w of String(CONFIG.hideWords || "").split(",")) if (w.trim()) words.push(w.trim());
+    return words.map(norm);
+  }
+
+  // ── Hintergrund ───────────────────────────────────
+  const BG_PRESETS = {
+    schwarz: { label: "Schwarz", css: "#000" },
+    anthrazit: { label: "Anthrazit", css: "#0d1117" },
+    nacht: { label: "Nachtblau", css: "#0b1020" },
+    glas: { label: "Glas", css: "rgba(0,0,0,.72)", blur: true },
+  };
+  function bgStyle() {
+    const p = BG_PRESETS[CONFIG.treeBg];
+    if (p) return `background:${p.css};` + (p.blur ? "backdrop-filter:blur(10px);" : "");
+    return /^#[0-9a-f]{3,8}$/i.test(CONFIG.treeBg) ? `background:${CONFIG.treeBg};` : "background:#000;";
+  }
+
+  // ── Meine Serien per + / − ────────────────────────
+  // +  : nicht in der Liste → hinzufügen; schon drin → anpinnen
+  // −  : angepinnt → lösen; in der Liste → entfernen
+  function libPlus(n) {
+    const it = n.item;
+    if (!it) return;
+    const lib = loadLib();
+    const e = lib[it.key];
+    if (!e) {
+      lib[it.key] = {
+        key: it.key,
+        title: it.title,
+        seriesUrl: it.seriesUrl,
+        lastUrl: n.kind === "episode" ? n.href : it.href,
+        lastLabel: n.kind === "episode" ? n.label.trim() : "",
+        pct: 0,
+        pinned: false,
+        pinOrder: 0,
+        ts: Date.now(),
+      };
+      saveLib(lib);
+      toast(`„${it.title}“ → Meine Serien`);
+    } else if (!e.pinned) {
+      togglePin(it.key);
+      toast(`„${it.title}“ angepinnt 📌`);
+    } else {
+      toast(`„${it.title}“ ist schon angepinnt`);
+    }
+  }
+  function libMinus(n) {
+    const it = n.item;
+    if (!it) return;
+    const e = loadLib()[it.key];
+    if (!e) toast(`„${it.title}“ ist nicht in deiner Liste`);
+    else if (e.pinned) {
+      togglePin(it.key);
+      toast(`„${it.title}“ gelöst`);
+    } else {
+      removeEntry(it.key);
+      toast(`„${it.title}“ aus Meine Serien entfernt`);
+    }
+  }
+
+  // ── Ansicht (Vollbild per Alt+L, Sidebar per ★) ───
+  const SIDE_W = 520;
+
   function buildListView() {
     let lines = [];
     let selId = null;
     let signature = "";
+    const view = { mode: "full" };
 
     const input = h("input", {
       class: "tfilter",
@@ -1345,12 +1470,88 @@
         input.focus();
       },
     });
+
+    // ── Einstellungen (Alt+S) ──
+    const settings = h("div", { class: "tset", hidden: true });
+    function buildSettings() {
+      const chk = (checked, label, onchange) =>
+        h("label", {}, h("input", { type: "checkbox", checked, onchange: (e) => onchange(e.target.checked) }), " " + label);
+      const presets = h(
+        "div",
+        { class: "tchips" },
+        ...Object.entries(HIDE_PRESETS).map(([k, p]) =>
+          chk((CONFIG.hidePresets || []).includes(k), p.label, (on) => {
+            const cur = new Set(CONFIG.hidePresets || []);
+            on ? cur.add(k) : cur.delete(k);
+            saveConfig("hidePresets", [...cur]);
+            render(true);
+          }),
+        ),
+      );
+      const words = h("input", {
+        type: "text",
+        class: "twords",
+        value: CONFIG.hideWords || "",
+        placeholder: "z. B. krimi, anime, gzsz",
+        onchange: (e) => {
+          saveConfig("hideWords", e.target.value);
+          render(true);
+        },
+      });
+      const swatches = h(
+        "div",
+        { class: "tchips" },
+        ...Object.entries(BG_PRESETS).map(([k, p]) =>
+          h("button", {
+            class: "tbtn" + (CONFIG.treeBg === k ? " on" : ""),
+            text: p.label,
+            onclick: () => {
+              saveConfig("treeBg", k);
+              applyLayout();
+              buildSettings();
+            },
+          }),
+        ),
+        h("input", {
+          type: "color",
+          title: "Eigene Farbe",
+          value: /^#[0-9a-f]{6}$/i.test(CONFIG.treeBg) ? CONFIG.treeBg : "#000000",
+          oninput: (e) => {
+            saveConfig("treeBg", e.target.value);
+            applyLayout();
+          },
+        }),
+      );
+      settings.replaceChildren(
+        h("div", { class: "tsh", text: "Ausblenden" }),
+        presets,
+        h("div", { class: "trow" }, h("span", { text: "Eigene Stichwörter (Komma): " }), words),
+        chk(CONFIG.hidePaid, `${SITE.paidLabel}-/Bezahl-Titel ausblenden (Alt+P)`, (on) => {
+          saveConfig("hidePaid", on);
+          render(true);
+        }),
+        h("div", { class: "tsh", text: "Ansicht" }),
+        h("div", { class: "trow" }, h("span", { text: "Hintergrund: " }), swatches),
+        chk(CONFIG.sidePinned, "Sidebar fixieren (bleibt offen, auch nach Neuladen; Seite rückt nach links)", (on) => {
+          saveConfig("sidePinned", on);
+          applyLayout();
+        }),
+        chk(CONFIG.treeAuto, "Übersichtsseiten automatisch als Vollbild-Baum zeigen", (on) => saveConfig("treeAuto", on)),
+      );
+    }
+    function toggleSettings(force) {
+      settings.hidden = !(force ?? settings.hidden);
+      if (!settings.hidden) buildSettings();
+      input.focus();
+    }
+
     const bar = h(
       "div",
       { class: "tbar" },
       status,
       h("span", { class: "grow" }),
       paidBtn,
+      h("button", { class: "tbtn", text: "⚙", title: "Einstellungen (Alt+S)", onclick: () => toggleSettings() }),
       h("button", {
         class: "tbtn",
         text: "mehr laden ↓",
@@ -1360,24 +1561,25 @@
           input.focus();
         },
       }),
-      h("button", { class: "tbtn", text: "Seite zeigen (Esc)", onclick: closeListView }),
+      h("button", { class: "tbtn", text: "✕", title: "Schließen (Esc)", onclick: closeListView }),
     );
     const help = h("div", {
       class: "thelp",
-      text: "↑↓ wählen · → aufklappen · ← zuklappen · Enter öffnen · Shift+Enter Übersicht · Alt+P Paid · Esc Seite · L Baum",
+      text: "↑↓ wählen · →/← auf/zu · Leertaste/Enter auf/zu bzw. abspielen · Shift+Enter Serie öffnen · + Liste/anpinnen · − lösen/entfernen · Alt+P Paid · Alt+S ⚙ · Esc zu",
     });
 
     const selIndex = () => Math.max(0, lines.findIndex((l) => !l.spacer && l.node.id === selId));
 
-    function activate(line, overview) {
-      const n = line.node;
+    // Leertaste/Enter: Aufklappbares auf/zu, sonst öffnen.
+    // overview (Shift): Serie direkt öffnen (aus Meine Serien = weiterschauen).
+    function activate(n, overview) {
       if (n.kind === "more") {
         showAll.add(n.group);
         render(true);
-      } else if (n.kind === "group" || n.kind === "season") {
+      } else if (overview && n.item && (n.kind === "series" || n.kind === "film")) {
+        go(n.href || n.item.seriesUrl);
+      } else if (n.children) {
         toggle(n);
-      } else if (overview && n.item) {
-        go(n.item.seriesUrl);
       } else if (n.href) {
         go(n.href);
       }
@@ -1402,10 +1604,9 @@
       list.children[i]?.scrollIntoView({ block: "nearest" });
     }
 
-    function lineEl(l, k) {
+    function lineEl(l) {
       if (l.spacer) return h("div", { class: "tline spacer" }, ...l.segs.map((s) => h("span", { style: `color:${s.c}`, text: s.t })));
       const n = l.node;
-      const label = h("span", { class: "tl " + n.kind, text: n.label });
       return h(
         "div",
         {
@@ -1417,30 +1618,31 @@
           },
           onclick: (e) => {
             selId = n.id;
-            // Klick auf die Baum-Linie klappt, Klick auf den Namen öffnet
-            if (e.target.classList.contains("tg") && n.children) toggle(n);
-            else activate(l, e.shiftKey);
+            activate(n, e.shiftKey);
           },
+          ondblclick: () => n.item && (n.kind === "series" || n.kind === "film") && go(n.href || n.item.seriesUrl),
         },
         ...l.segs.map((s) => h("span", { class: "tg", style: `color:${s.c}`, text: s.t })),
         h("span", { class: "tg", style: `color:${l.color}`, text: l.glyph }),
         n.last ? h("span", { class: "tlast", text: "▶ " }) : null,
-        label,
+        h("span", { class: "tl " + n.kind, text: n.label }),
         n.meta ? h("span", { class: "tmeta", text: " " + n.meta }) : null,
         n.type && n.kind === "film" ? h("span", { class: "ttag", text: " " + n.type.toUpperCase() }) : null,
         n.paid ? h("span", { class: "tpaid", text: ` [${SITE.paidLabel}]` }) : null,
-        n.inLib ? h("span", { class: "tstar", text: " ★" }) : null,
+        n.pinned ? h("span", { class: "tstar", text: " 📌" }) : n.inLib ? h("span", { class: "tstar", text: " ★" }) : null,
       );
     }
 
     function render(force) {
       const tree = buildTree(input.value);
       const next = flatten(tree.nodes);
-      const sig = next.map((l) => (l.spacer ? "|" : l.node.id + l.node.label + (l.node.meta || ""))).join("\n");
+      const sig = next.map((l) => (l.spacer ? "|" : l.node.id + l.node.label + (l.node.meta || "") + (l.node.inLib ? "★" : "") + (l.node.pinned ? "📌" : ""))).join("\n");
       heading.textContent = `● ${SITE.name} — ${cleanTitle(document.title) || location.pathname}`;
       paidBtn.textContent = CONFIG.hidePaid ? `${SITE.paidLabel}: aus` : `${SITE.paidLabel}: an`;
       status.textContent =
-        `${tree.total} Titel · ${tree.nodes.length} Reihen` + (tree.hiddenPaid ? ` · ${tree.hiddenPaid} ${SITE.paidLabel} ausgeblendet` : "");
+        `${tree.total} Titel · ${tree.nodes.length} Reihen` +
+        (tree.hiddenPaid ? ` · ${tree.hiddenPaid} ${SITE.paidLabel} aus` : "") +
+        (tree.hiddenCat ? ` · ${tree.hiddenCat} gefiltert` : "");
       if (!force && sig === signature) return;
       signature = sig;
       lines = next;
@@ -1464,70 +1666,108 @@
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
       const line = lines[selIndex()];
+      const node = line && !line.spacer ? line.node : null;
       const q = input.value.trim();
+      const empty = !input.value;
       if (e.key === "ArrowDown") move(1);
       else if (e.key === "ArrowUp") move(-1);
-      else if (e.key === "ArrowRight" && line && !line.spacer && !input.value) {
-        if (line.node.children && !isOpen(line.node)) toggle(line.node, true);
+      else if (e.key === "ArrowRight" && node && empty) {
+        if (node.children && !isOpen(node)) toggle(node, true);
         else move(1);
-      } else if (e.key === "ArrowLeft" && line && !line.spacer && !input.value) {
-        if (line.node.children && isOpen(line.node)) toggle(line.node, false);
+      } else if (e.key === "ArrowLeft" && node && empty) {
+        if (node.children && isOpen(node)) toggle(node, false);
         else if (line.parent >= 0) {
           selId = lines[line.parent].node.id;
           paintSel();
         }
+      } else if (e.key === " " && empty && node) {
+        activate(node, false); // mit Filtertext tippt die Leertaste ganz normal
       } else if (e.key === "Enter") {
         if ((e.ctrlKey || e.metaKey) && q) go(SITE.searchUrl(q));
-        else if (line && !line.spacer) activate(line, e.shiftKey);
+        else if (node) activate(node, e.shiftKey);
         else if (q) go(SITE.searchUrl(q));
-      } else if (e.altKey && (e.key || "").toLowerCase() === "p") {
+      } else if ((e.key === "+" || e.code === "NumpadAdd") && node) {
+        libPlus(node);
+        render(true);
+      } else if ((e.key === "-" || e.code === "NumpadSubtract") && node) {
+        libMinus(node);
+        render(true);
+      } else if (e.altKey && e.code === "KeyP") {
         paidBtn.click();
+      } else if (e.altKey && e.code === "KeyS") {
+        toggleSettings();
+      } else if (e.altKey && e.code === "KeyL") {
+        view.mode === "full" ? closeListView() : openListView("full");
       } else if (e.key === "Escape") {
-        if (input.value) {
+        if (!settings.hidden) toggleSettings(false);
+        else if (input.value) {
           input.value = "";
           render(true);
         } else closeListView();
-      } else if ((e.key || "").toLowerCase() === "l" && !input.value) {
-        closeListView();
       } else return;
       e.preventDefault();
     });
     for (const t of ["keyup", "keypress"]) input.addEventListener(t, (e) => e.stopPropagation());
 
-    const page = h("div", { class: "tpage" }, heading, h("div", { class: "tprompt" }, h("span", { text: "❯ " }), input), list, bar, help);
+    const page = h(
+      "div",
+      { class: "tpage" },
+      heading,
+      h("div", { class: "tprompt" }, h("span", { text: "❯ " }), input),
+      list,
+      settings,
+      bar,
+      help,
+    );
     const backdrop = h("div", { class: "tree", hidden: true }, page);
     shadow.append(backdrop);
-    return { backdrop, input, render, timer: 0 };
+
+    function applyLayout() {
+      const side = view.mode === "side";
+      backdrop.className = "tree" + (side ? " side" : "");
+      backdrop.setAttribute("style", bgStyle() + (side ? `width:min(${SIDE_W}px,100vw);` : ""));
+      root.classList.toggle(C_SIDE, side && !backdrop.hidden && !!CONFIG.sidePinned);
+      updateFab();
+    }
+
+    return { backdrop, input, render, view, applyLayout, timer: 0 };
   }
 
   function treeRefresh(force) {
     if (listViewOpen()) listView.render(force);
   }
 
-  function openListView() {
+  // mode: "full" (Alt+L) oder "side" (★)
+  function openListView(mode = "full", focus = true) {
     ensureHost();
     closeOverlay();
     if (!listView) listView = buildListView();
+    listView.view.mode = mode;
     listView.input.value = "";
-    listView.render(true);
     listView.backdrop.hidden = false;
-    updateFab();
+    listView.applyLayout();
+    listView.render(true);
     clearInterval(listView.timer);
     // SPA lädt Reihen nach (Scrollen, Lazy-Loading) → laufend nachziehen
     listView.timer = setInterval(() => listView.render(false), 1500);
-    setTimeout(() => listView.input.focus(), 0);
+    if (focus) setTimeout(() => listView.input.focus(), 0);
   }
   function closeListView() {
     if (!listView) return;
     listView.backdrop.hidden = true;
-    updateFab();
+    listView.applyLayout();
     clearInterval(listView.timer);
   }
   const listViewOpen = () => !!listView && !listView.backdrop.hidden;
+  const listViewMode = () => (listViewOpen() ? listView.view.mode : "");
 
-  // Auf Übersichts-/Suchseiten automatisch öffnen, sobald die Seite Titel
-  // hat. Nie auf Abspiel-Seiten. Wer mit Esc schließt, sieht die normale
-  // Seite, bis er woanders hin navigiert.
+  function toggleSidebar() {
+    listViewMode() === "side" ? closeListView() : openListView("side");
+  }
+
+  // Auf Übersichts-/Suchseiten automatisch den Vollbild-Baum öffnen, sobald
+  // die Seite Titel hat. Nie auf Abspiel-Seiten, nicht bei fixierter Sidebar.
+  // Wer mit Esc schließt, sieht die normale Seite, bis er weiter navigiert.
   function setupAutoListView() {
     let lastHref = "";
     let handled = false;
@@ -1535,18 +1775,32 @@
       if (location.href !== lastHref) {
         lastHref = location.href;
         handled = false;
-        if (SITE.isWatchUrl(location)) closeListView();
+        if (SITE.isWatchUrl(location) && listViewMode() === "full") closeListView();
       }
-      if (handled || !CONFIG.treeAuto || listViewOpen() || overlayOpen()) return;
+      if (handled || !CONFIG.treeAuto || CONFIG.sidePinned || listViewOpen() || overlayOpen()) return;
       if (SITE.isWatchUrl(location) || document.querySelector(`.${C_ROOT}`)) {
         handled = true;
         return;
       }
       if (collectPage().length) {
         handled = true;
-        openListView();
+        openListView("full");
       }
     }, 700);
+
+    // Nicht fixierte Sidebar: Klick daneben schließt sie
+    window.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (listViewMode() !== "side" || CONFIG.sidePinned) return;
+        if (!e.composedPath().includes(host)) closeListView();
+      },
+      true,
+    );
+
+    // Fixierte Sidebar nach dem Laden wiederherstellen (ohne Fokus-Klau,
+    // sonst landen Player-Tasten wie Leertaste in unserem Filterfeld)
+    if (CONFIG.sidePinned) openListView("side", false);
   }
 
   // ═══════════════════════════════════════════════
@@ -1568,8 +1822,8 @@
         let handled = true;
         if ((e.key === "/" && plain) || ((e.ctrlKey || e.metaKey) && !e.altKey && key === "k")) {
           overlayOpen() ? closeOverlay() : openOverlay();
-        } else if (plain && !e.shiftKey && key === "l") {
-          listViewOpen() ? closeListView() : openListView();
+        } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyL") {
+          listViewMode() === "full" ? closeListView() : openListView("full");
         } else if (plain && !e.shiftKey && key === "t") {
           toggleTheater();
         } else if (e.key === "Escape" && overlayOpen()) {
