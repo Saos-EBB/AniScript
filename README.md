@@ -7,6 +7,7 @@ Comfort-[ScriptCat](https://scriptcat.org/)-Userscripts für Streaming-Seiten, d
 | [`AniScriptV1.0.0.js`](AniScriptV1.0.0.js) | aniworld.to, s.to | Autoplay, Intro-Skip, Auto-nächste-Folge, Skip-Hotkeys, Fortschritt |
 | [`JoynScriptV1.0.0.js`](JoynScriptV1.0.0.js) | joyn.de | Vollbild übersteht Folgenwechsel, „Meine Serien“-Liste + Schnellsuche |
 | [`RTLPlusScriptV1.0.0.js`](RTLPlusScriptV1.0.0.js) | plus.rtl.de | wie JoynScript |
+| [`YouTubeScriptV1.0.0.js`](YouTubeScriptV1.0.0.js) | youtube.com | YouTube als Text-Baum, eigene Liste, Sleep-Timer |
 
 ---
 
@@ -31,7 +32,9 @@ Zwei Scripts mit identischem Kern, nur der `SITE`-Block oben ist pro Seite ander
   - Tippen filtert (Leertaste tippt dann ganz normal), `Strg+Enter` sucht auf der Seite.
   - Folgen werden beim Aufklappen aus der Serienseite gelesen, auch wenn die Links nur im eingebetteten JSON stehen. Lange Reihen zeigen 12 Titel, Rest hinter „… N weitere“. „mehr laden ↓“ scrollt die Seite im Hintergrund, damit sie weitere Reihen nachlädt.
 - **Vollbild oder Sidebar:** `⇆` unten im Baum schaltet zwischen Vollbild und breiter Sidebar rechts um; `Strg+K` merkt sich das. Nicht fixierte Sidebar schließt bei Klick daneben.
-- **Sleep-Timer (`Z`).** Jedes `Z` schaltet weiter: 15 → 30 → 45 → 60 → 90 Min → „Ende dieser Folge“ → aus; `Shift+Z` = sofort aus. Restzeit oben rechts (Klick = weiter). Eine Minute vorher kommt eine Warnung. Bei Ablauf wird pausiert und auf eine **leere Seite** (`about:blank`) weitergeleitet, damit garantiert nichts weiterläuft (Zurück-Taste bringt dich wieder hin). „Ende dieser Folge“ greift beim URL-Wechsel, beim Folgenwechsel im selben Player, bei Videoende oder 10 s vor Schluss. Gemerkt wird in „Meine Serien“: `💤 Timer gestellt` an der Folge, bei der er gestellt wurde, und `⏹ eingeschlafen bei 23:41` an der Folge, wo er gestoppt hat. Beides steht im Baum, die Serie zeigt `💤 S01E04`.
+- **Sleep-Timer (`Z`).** Jedes `Z` schaltet weiter: 15 → 30 → 45 → 60 → 90 Min → „Ende dieser Folge“ → aus; `Shift+Z` = sofort aus. Restzeit oben rechts (Klick = weiter). Eine Minute vorher kommt eine Warnung. Bei Ablauf wird pausiert und auf eine **leere Seite** (`about:blank`) weitergeleitet, damit garantiert nichts weiterläuft (Zurück-Taste bringt dich wieder hin). „Ende dieser Folge“ greift beim URL-Wechsel, beim Folgenwechsel im selben Player, bei Videoende oder 10 s vor Schluss. Der **Startpunkt (Folge + Zeit) wird beim ersten `Z` festgehalten**; weiteres `Z` ändert nur die Dauer.
+  - **Eigener Punkt „💤 Sleep-Timer“:** in „Meine Serien“ (★) als erste Zeile „Weiterschauen ab Sleep-Timer“ und im Baum unter „★ Meine Serien“ mit den letzten 5 Timern (`gestellt bei 12:41 · gestern · ⏹ bei 13:05`). `Enter` öffnet die Folge und **spult an die Stelle, an der du den Timer gestellt hast**. `−` löscht einen Eintrag.
+  - An den Folgen im Baum: `💤 Timer gestellt` und `⏹ eingeschlafen bei 23:41`.
 - **Einstellungen im Baum (`Alt+S` oder ⚙):**
   - **Ausblenden:** Sport, News, Kinder, Reality, Doku, Talk, Shopping per Häkchen, plus eigene Stichwörter (kommagetrennt). Gilt für Reihen-Namen, Titel, Typ und URL (z. B. `/sport/…`). Die Seiten liefern pro Kachel kein echtes Genre, deshalb Stichwörter. „Meine Serien“ wird nie gefiltert.
   - **Paid ein/aus** (`Alt+P`): Joyn PLUS+ / RTL+ Premium; eingeblendet stehen sie mit `[PLUS+]` / `[Premium]` da.
@@ -68,6 +71,18 @@ Der Player ruft beim Vollbild `requestFullscreen()` auf seinem Container auf. Be
 1. [ScriptCat](https://scriptcat.org/) installieren
 2. Script installieren (`JoynScriptV1.0.0.js` bzw. `RTLPlusScriptV1.0.0.js`)
 3. joyn.de / plus.rtl.de öffnen
+
+---
+
+## YouTubeScript
+
+Gleicher Kern wie JoynScript/RTLPlusScript, nur der `SITE`-Block ist anders – alles oben gilt auch hier, mit diesen Unterschieden:
+
+- **Baum (`Strg+K`)**: Reihen sind die Abschnitte der Seite (Empfohlen, Shorts, …), jede Zeile ein Video mit **Kanal · Dauer · Aufrufe · Alter**, `✓`/`◐ 40%` aus YouTubes rotem Fortschrittsbalken. Playlists und Shorts sind markiert. „Shorts“ lässt sich unter ⚙ ausblenden.
+- **★ = „Meine Liste“**: Videos, die du länger als 20 s schaust (ab 60 s Länge), plus alles, was du im Baum mit `+` aufnimmst.
+- **Sleep-Timer (`Z`)** und „Weiterschauen ab Sleep-Timer“ wie oben.
+- **Kein eigenes `T`, `/` und kein Vollbild-Umbau**: YouTube hat Theater-Modus (`T`), Vollbild und `/` für die Suche selbst – die bleiben unverändert.
+- Kanal, Dauer und Fortschritt werden aus YouTubes Kachel-Elementen gelesen. Benennt YouTube die um, fehlt nur diese Zusatzinfo; der Baum selbst funktioniert weiter.
 
 ---
 
