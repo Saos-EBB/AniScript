@@ -23,12 +23,14 @@ Zwei Scripts mit identischem Kern, nur der `SITE`-Block oben ist pro Seite ander
   - „+ Diese Seite merken“ nimmt eine Serie auf, ohne sie zu schauen
   - Kein Treffer? `Enter` / `Strg+Enter` → Seiten-Suche, oder **Google** mit `site:`, das findet oft mehr als die Seiten-Suche
   - ⚙ im Overlay: Vollbild-Umleitung an/aus, Theater dauerhaft, ★-Button, Liste leeren
+- **Text-Liste statt Kachel-Wand (`L`).** Alle Titel der aktuellen Seite als schlichte Liste, eine Zeile pro Titel: Typ (Serie/Film), Name, ★ wenn schon in „Meine Serien“. Tippen filtert, `Enter` öffnet. Auf der **Suchseite geht sie automatisch auf** (abschaltbar unter ⚙). Was die Seite nachlädt, erscheint von selbst; „Mehr laden ↓“ scrollt die Seite im Hintergrund, damit weitere Titel kommen.
 
 ### Tasten
 
 | Taste | Aktion |
 |-------|--------|
 | `/`, `Strg+K` | „Meine Serien“ öffnen/schließen |
+| `L` | Text-Liste der Titel auf der Seite an/aus |
 | `T` | Theater-Modus an/aus |
 | `Esc` | Overlay schließen / Vollbild bzw. Theater beenden |
 | Player-Vollbild-Button, `F`, Doppelklick | Vollbild an/aus (wird umgeleitet) |
