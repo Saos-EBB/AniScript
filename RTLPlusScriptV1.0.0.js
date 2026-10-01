@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RTLPlusScript
 // @namespace    SaosOne
-// @version      1.1.0
+// @version      1.2.0
 // @description  Comfort für RTL+: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
 // @match        *://plus.rtl.de/*
 // @grant        GM_getValue
@@ -90,6 +90,20 @@
     isSearchUrl: (url) => /^\/(suche|search)/i.test(url.pathname),
     searchUrl: (q) =>
       `https://plus.rtl.de/suche?term=${encodeURIComponent(q)}`,
+    // Folgen-URLs im rohen HTML: …/staffel-<n>-<id>/episode-<n>-<titel>-<id>
+    episodes(text, info) {
+      const base = escRe(new URL(info.seriesUrl).pathname);
+      const eps = [];
+      const seasons = [];
+      const epRe = new RegExp(`${base}/staffel-(\\d+)-(\\d+)/episode-(\\d+)-([a-z0-9-]+?)-(\\d+)(?![a-z0-9-])`, "gi");
+      for (const m of text.matchAll(epRe)) eps.push({ season: +m[1], ep: +m[3], slug: m[4], path: m[0] });
+      for (const m of text.matchAll(new RegExp(`${base}/staffel-(\\d+)-(\\d+)`, "gi"))) {
+        seasons.push({ season: +m[1], path: m[0] });
+      }
+      return { eps, seasons };
+    },
+    paidRe: /\bPremium\b|\bPREMIUM\b/, // Badge-Text auf Bezahl-Kacheln
+    paidLabel: "Premium",
     googleSite: "plus.rtl.de",
     titleSuffix: /\s*[|–—-]\s*RTL\+.*$/i,
   };
@@ -102,7 +116,8 @@
     fsToTheater: true, // Vollbild-Button des Players → Vollbild auf <html>
     showFab: true, // ★-Button unten links
     minWatchSec: 20, // ab so vielen Sekunden Wiedergabe in die Liste
-    listOnSearch: true, // Suchseite automatisch als Text-Liste zeigen
+    treeAuto: true, // Übersichtsseiten automatisch als Baum zeigen (sonst L)
+    hidePaid: false, // Bezahl-Titel im Baum ausblenden (Alt+P)
   };
 
   function loadConfig() {
@@ -139,6 +154,10 @@
     try {
       console.log(`[${SITE.name}Script]`, ...a);
     } catch {}
+  }
+
+  function escRe(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function humanize(slug) {
@@ -612,15 +631,36 @@
     .settings[hidden] { display: none; }
     .settings label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
     .hint { font-size: 11px; color: #777; padding: 6px 14px 10px; background: #1a1a24; }
-    .lrow {
-      display: flex; align-items: baseline; gap: 10px; padding: 7px 14px;
-      cursor: pointer; border-bottom: 1px solid #22222d; font-size: 15px;
+    .tree {
+      position: fixed; inset: 0; z-index: 2147483645; background: #000; color: #c9d1d9;
+      display: flex; justify-content: center;
     }
-    .lrow.sel, .lrow:hover { background: #262636; }
-    .lrow .tag { flex: 0 0 52px; font-size: 11px; color: #8a8aa0; text-transform: uppercase; letter-spacing: .03em; }
-    .lrow .lt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .lrow .mark { color: #ffd54a; font-size: 12px; }
-    .count { font-size: 12px; color: #9a9ab0; align-self: center; }
+    .tree[hidden] { display: none; }
+    .tree * { font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace; }
+    .tpage { width: min(1100px, 100%); height: 100%; display: flex; flex-direction: column; padding: 18px 20px 10px; font-size: 14px; line-height: 1.55; }
+    .thead { color: #fff; font-weight: 700; font-size: 15px; }
+    .tprompt { display: flex; align-items: center; color: #3fb950; margin: 8px 0 10px; }
+    .tfilter { flex: 1; background: transparent; border: 0; outline: 0; color: #fff; font-size: 14px; padding: 0; }
+    .tfilter::placeholder { color: #484f58; }
+    .tlist { flex: 1; overflow-y: auto; }
+    .tline { cursor: pointer; padding: 0 6px; border-radius: 3px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+    .tline.sel { background: #161b22; }
+    .tline.spacer { cursor: default; background: none; }
+    .tl.group { color: #fff; font-weight: 700; }
+    .tl.series, .tl.film { color: #e6edf3; }
+    .tl.season { color: #c9d1d9; }
+    .tl.episode { color: #adbac7; }
+    .tl.info, .tl.more { color: #6e7681; font-style: italic; }
+    .tmeta, .ttag { color: #6e7681; }
+    .ttag { font-size: 12px; }
+    .tpaid, .tstar { color: #e3b341; }
+    .tlast { color: #3fb950; }
+    .tbar { display: flex; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid #21262d; color: #6e7681; font-size: 12px; }
+    .tbar .grow { flex: 1; }
+    .tbtn { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+    .tbtn:hover { border-color: #8b949e; color: #fff; }
+    .thelp { color: #484f58; font-size: 11px; padding-top: 6px; }
+    .tinfo { color: #6e7681; padding: 10px 6px; }
     .toast {
       position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
       z-index: 2147483647; padding: 9px 16px; border-radius: 8px;
@@ -680,7 +720,7 @@
 
   function updateFab() {
     if (!fab) return;
-    fab.hidden = !CONFIG.showFab || root.classList.contains(C_ON);
+    fab.hidden = !CONFIG.showFab || root.classList.contains(C_ON) || listViewOpen();
   }
 
   function toast(text, ms = 1600) {
@@ -762,7 +802,8 @@
       }),
       cb("theaterMode", "Theater-Modus dauerhaft (T)", theaterTick),
       cb("showFab", "★-Button unten links anzeigen", updateFab),
-      cb("listOnSearch", "Suchergebnisse automatisch als Text-Liste zeigen (sonst L)"),
+      cb("treeAuto", "Übersichtsseiten automatisch als Baum zeigen (sonst L)"),
+      cb("hidePaid", "Bezahl-Titel im Baum ausblenden (Alt+P)", () => treeRefresh(true)),
       h(
         "div",
         { style: "margin-top:8px" },
@@ -807,7 +848,7 @@
     );
     const hint = h("div", {
       class: "hint",
-      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · L Text-Liste · T Theater-Modus",
+      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · L Baum-Ansicht · T Theater-Modus",
     });
 
     function row(e, i) {
@@ -915,7 +956,6 @@
 
   function openOverlay() {
     ensureHost();
-    closeListView();
     if (!overlay) overlay = buildOverlay();
     overlay.input.value = "";
     overlay.render();
@@ -928,12 +968,29 @@
   const overlayOpen = () => !!overlay && !overlay.backdrop.hidden;
 
   // ═══════════════════════════════════════════════
-  // TEXT-LISTE – alle Titel der aktuellen Seite als kompakte Liste statt
-  // Kachel-Wand. Auf Suchseiten automatisch, sonst per L.
-  // Selektor-frei: alle Links, die SITE.parse() als Serie/Film erkennt,
-  // in DOM-Reihenfolge (= Reihenfolge der Seite), pro Serie einmal.
+  // BAUM-ANSICHT – die ganze Seite als schwarzer Text-Baum (git-log-Stil)
+  //
+  //   ● Joyn — Startseite
+  //   ├─┬ Weiterschauen            ← Reihe = Überschrift auf der Seite
+  //   │ ├─┬ Die Simpsons           ← Serie, aufklappbar
+  //   │ │ └─┬ Staffel 2
+  //   │ │   └── E01 …              ← Folgen per fetch der Serienseite
+  //   │ └── John Wick  FILM
+  //
+  // Selektor-frei:
+  //  - Titel = alle Links, die SITE.parse() erkennt (DOM-Reihenfolge).
+  //  - Reihe = nächste VORANGEHENDE Überschrift (h1–h4, role=heading), die
+  //    selbst kein Titel ist. Eine Query über "h1,…,a[href]" liefert alles
+  //    in Dokument-Reihenfolge → ein Durchlauf reicht.
+  //  - Folgen: rohes HTML der Serienseite per Regex nach Folgen-URLs
+  //    durchsuchen (SITE.episodes). Klappt auch, wenn die Links nur im
+  //    eingebetteten JSON stehen (Next.js/Angular-State).
+  //  - Paid: Badge-Text (SITE.paidRe) oder Klassennamen im Kachel-Umfeld.
   // ═══════════════════════════════════════════════
   const TYPE_LABEL = { serien: "Serie", filme: "Film", shows: "Show", compilation: "Reihe", sport: "Sport" };
+  const BRANCH_COLORS = ["#f14e32", "#3fb950", "#58a6ff", "#bc8cff", "#e3b341", "#39c5cf"];
+  const GROUP_PREVIEW = 12; // so viele Titel pro Reihe, Rest hinter „… N weitere“
+  const PAID_CLASS_RE = /premium|paywall|locked|plus-?badge|subscri/i;
 
   function linkTitle(a, info) {
     const cands = [
@@ -941,7 +998,7 @@
       a.getAttribute("title"),
       a.querySelector("img[alt]")?.getAttribute("alt"),
       a.querySelector("h1,h2,h3,h4")?.textContent,
-      a.innerText,
+      a.innerText ?? a.textContent,
     ];
     for (const c of cands) {
       const t = (c || "").split("\n").map((x) => x.trim()).find(Boolean);
@@ -950,185 +1007,546 @@
     return info.title;
   }
 
-  function collectPageTitles() {
-    const seen = new Map();
-    for (const a of document.querySelectorAll("a[href]")) {
-      let url;
-      try {
-        url = new URL(a.href, location.href);
-      } catch {
-        continue;
-      }
-      if (url.origin !== location.origin) continue;
-      const info = SITE.parse(url);
-      if (!info) continue;
-      const title = linkTitle(a, info);
-      const prev = seen.get(info.key);
-      if (!prev) {
-        const type = info.key.split("/")[0];
-        seen.set(info.key, { ...info, title, href: url.href, type: TYPE_LABEL[type] || humanize(type) });
-      } else if (prev.title === info.title && title !== info.title) {
-        prev.title = title; // besseren Titel als den Slug nachreichen
+  const paidCache = new WeakMap();
+  function isPaid(a) {
+    if (paidCache.has(a)) return paidCache.get(a);
+    // Kachel = Eltern-Element, wenn darin nur dieser eine Titel-Link steckt
+    // (Badges liegen oft neben dem Link statt darin).
+    const p = a.parentElement;
+    const tile = p && p.querySelectorAll("a[href]").length === 1 ? p : a;
+    let paid = SITE.paidRe.test(tile.innerText || "");
+    if (!paid) {
+      for (const el of [tile, ...tile.querySelectorAll("*")]) {
+        const attrs = ["aria-label", "title", "alt"].map((k) => el.getAttribute(k) || "").join(" ");
+        const cls = typeof el.className === "string" ? el.className : el.getAttribute("class") || "";
+        if (SITE.paidRe.test(attrs) || PAID_CLASS_RE.test(cls)) {
+          paid = true;
+          break;
+        }
       }
     }
-    return [...seen.values()];
+    paidCache.set(a, paid);
+    return paid;
   }
 
-  let listView = null; // { backdrop, input, render, timer }
+  function parseHref(href) {
+    let url;
+    try {
+      url = new URL(href, location.href);
+    } catch {
+      return null;
+    }
+    if (url.origin !== location.origin) return null;
+    const info = SITE.parse(url);
+    return info ? { info, url } : null;
+  }
 
+  // Liefert [{ name, items: [{key,title,href,seriesUrl,type,kind,paid}] }]
+  function collectPage() {
+    const links = new Map(); // <a> → {info, url, title}
+    const titleSet = new Set();
+    for (const a of document.querySelectorAll("a[href]")) {
+      const r = parseHref(a.href);
+      if (!r) continue;
+      const title = linkTitle(a, r.info);
+      links.set(a, { ...r, title });
+      titleSet.add(norm(title));
+    }
+    const groups = [];
+    const byName = new Map();
+    let current = "Highlights";
+    for (const el of document.querySelectorAll('h1,h2,h3,h4,[role="heading"],a[href]')) {
+      if (el.tagName === "A") {
+        const l = links.get(el);
+        if (!l) continue;
+        let g = byName.get(current);
+        if (!g) {
+          g = { name: current, items: new Map() };
+          byName.set(current, g);
+          groups.push(g);
+        }
+        const prev = g.items.get(l.info.key);
+        const paid = isPaid(el);
+        if (!prev) {
+          const type = l.info.key.split("/")[0];
+          g.items.set(l.info.key, {
+            key: l.info.key,
+            title: l.title,
+            href: l.url.href,
+            seriesUrl: l.info.seriesUrl,
+            type: TYPE_LABEL[type] || humanize(type),
+            kind: type === "filme" ? "film" : "series",
+            paid,
+          });
+        } else {
+          if (prev.title === l.info.title && l.title !== l.info.title) prev.title = l.title;
+          prev.paid = prev.paid || paid;
+        }
+        continue;
+      }
+      const t = (el.textContent || "").trim().replace(/\s+/g, " ");
+      if (t.length < 2 || t.length > 60) continue;
+      const inLink = el.closest("a[href]");
+      if (inLink && links.has(inLink)) continue; // Kachel-Titel, keine Reihe
+      if (titleSet.has(norm(t))) continue;
+      current = t;
+    }
+    return groups.map((g) => ({ name: g.name, items: [...g.items.values()] }));
+  }
+
+  // ── Folgen laden ──────────────────────────────────
+  // key → { state: "loading"|"done", seasons: Map<n, {n, path, eps: Map<ep,{ep,title,href}>, state}> }
+  const epCache = new Map();
+
+  function rawText(html) {
+    // In eingebettetem JSON sind Slashes oft escaped
+    return html.replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+  }
+
+  function mergeEpisodes(entry, html, info) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const titles = new Map();
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const t = (a.getAttribute("aria-label") || a.textContent || "").trim().split("\n")[0].trim();
+      if (t && t.length < 100) titles.set(a.getAttribute("href").replace(/^https?:\/\/[^/]+/, ""), t);
+    }
+    const res = SITE.episodes(rawText(html), info);
+    for (const s of res.seasons) {
+      if (!entry.seasons.has(s.season)) entry.seasons.set(s.season, { n: s.season, path: s.path, eps: new Map(), state: "" });
+      else if (!entry.seasons.get(s.season).path) entry.seasons.get(s.season).path = s.path;
+    }
+    for (const e of res.eps) {
+      if (!entry.seasons.has(e.season)) entry.seasons.set(e.season, { n: e.season, path: "", eps: new Map(), state: "" });
+      const season = entry.seasons.get(e.season);
+      const prev = season.eps.get(e.ep);
+      // Abspiel-Link (/play/…) bevorzugen, wenn es beide gibt
+      if (prev && !(e.preferred && !prev.preferred)) continue;
+      season.eps.set(e.ep, {
+        ep: e.ep,
+        title: titles.get(e.path) || humanize(e.slug),
+        href: location.origin + e.path,
+        preferred: !!e.preferred,
+      });
+    }
+  }
+
+  async function fetchText(path) {
+    const r = await fetch(path, { credentials: "include" });
+    return r.ok ? r.text() : "";
+  }
+
+  async function loadSeries(item) {
+    if (epCache.has(item.key)) return;
+    const entry = { state: "loading", seasons: new Map() };
+    epCache.set(item.key, entry);
+    const info = { key: item.key, seriesUrl: item.seriesUrl };
+    try {
+      // Aktuelle Seite = diese Serie? Dann auch das live gerenderte DOM nehmen.
+      if (location.pathname.replace(/\/$/, "") === new URL(item.seriesUrl).pathname) {
+        mergeEpisodes(entry, root.outerHTML, info);
+      }
+      mergeEpisodes(entry, await fetchText(item.seriesUrl), info);
+    } catch (e) {
+      log("Folgen laden fehlgeschlagen:", e);
+    }
+    entry.state = "done";
+    treeRefresh(true);
+  }
+
+  async function loadSeason(item, season) {
+    if (season.state || !season.path) return;
+    season.state = "loading";
+    try {
+      mergeEpisodes(epCache.get(item.key), await fetchText(season.path), { key: item.key, seriesUrl: item.seriesUrl });
+    } catch (e) {
+      log("Staffel laden fehlgeschlagen:", e);
+    }
+    season.state = "done";
+    treeRefresh(true);
+  }
+
+  // ── Baum-Modell ───────────────────────────────────
+  // Knoten: { id, kind, label, item?, season?, href?, color, children?: fn }
+  let listView = null; // { backdrop, input, status, list, render, timer }
+  const openState = new Map(); // id → bool (Default: Reihen offen, Rest zu)
+  const showAll = new Set(); // Reihen-IDs, bei denen „… N weitere“ aufgeklappt ist
+
+  function isOpen(n) {
+    return openState.has(n.id) ? openState.get(n.id) : n.kind === "group";
+  }
+
+  function seriesChildren(n) {
+    const entry = epCache.get(n.item.key);
+    if (!entry) {
+      loadSeries(n.item);
+      return [{ id: n.id + "/load", kind: "info", label: "⋯ lade Folgen …" }];
+    }
+    if (entry.state === "loading") return [{ id: n.id + "/load", kind: "info", label: "⋯ lade Folgen …" }];
+    const seasons = [...entry.seasons.values()].sort((a, b) => a.n - b.n);
+    if (!seasons.length) {
+      return [{ id: n.id + "/none", kind: "info", label: "keine Folgen gefunden – Enter öffnet die Übersicht", href: n.item.seriesUrl }];
+    }
+    const lastPath = (() => {
+      const e = loadLib()[n.item.key];
+      try {
+        return e ? new URL(e.lastUrl).pathname : "";
+      } catch {
+        return "";
+      }
+    })();
+    return seasons.map((s) => ({
+      id: `${n.id}/s${s.n}`,
+      kind: "season",
+      label: `Staffel ${s.n}`,
+      meta: s.eps.size ? `${s.eps.size} ${s.eps.size === 1 ? "Folge" : "Folgen"}` : "",
+      item: n.item,
+      season: s,
+      children: () => {
+        if (!s.eps.size) {
+          loadSeason(n.item, s);
+          return [{ id: `${n.id}/s${s.n}/load`, kind: "info", label: s.state === "done" ? "keine Folgen gefunden" : "⋯ lade Staffel …" }];
+        }
+        return [...s.eps.values()]
+          .sort((a, b) => a.ep - b.ep)
+          .map((e) => ({
+            id: `${n.id}/s${s.n}/e${e.ep}`,
+            kind: "episode",
+            label: `E${String(e.ep).padStart(2, "0")}  ${e.title}`,
+            href: e.href,
+            last: new URL(e.href).pathname === lastPath,
+          }));
+      },
+    }));
+  }
+
+  function itemNode(groupId, it, lib) {
+    const inLib = !!lib[it.key];
+    return {
+      id: `${groupId}/${it.key}`,
+      kind: it.kind,
+      label: it.title,
+      item: it,
+      // Serie in „Meine Serien“ → Enter = weiterschauen, sonst Übersicht
+      href: inLib && it.kind !== "film" ? lib[it.key].lastUrl : it.href,
+      type: it.type,
+      paid: it.paid,
+      inLib,
+      children: it.kind === "film" ? null : (n) => seriesChildren(n),
+    };
+  }
+
+  function buildTree(q) {
+    const tokens = norm(q).split(/\s+/).filter(Boolean);
+    const match = (it) => !tokens.length || tokens.every((t) => norm(`${it.title} ${it.type}`).includes(t));
+    const lib = loadLib();
+    const groups = [];
+
+    const mine = sortedEntries().map((e) => ({
+      key: e.key,
+      title: e.title,
+      href: e.lastUrl,
+      seriesUrl: e.seriesUrl,
+      type: TYPE_LABEL[e.key.split("/")[0]] || "",
+      kind: e.key.startsWith("filme/") ? "film" : "series",
+      paid: false,
+    }));
+    if (mine.length) groups.push({ name: "★ Meine Serien", items: mine });
+
+    // Serien-Übersicht offen? Dann die Serie selbst ganz oben, aufgeklappt.
+    const here = SITE.parse(location);
+    if (here && !SITE.isWatchUrl(location) && location.pathname.replace(/\/$/, "") === new URL(here.seriesUrl).pathname) {
+      const type = here.key.split("/")[0];
+      const it = {
+        key: here.key,
+        title: bestTitle(here),
+        href: here.seriesUrl,
+        seriesUrl: here.seriesUrl,
+        type: TYPE_LABEL[type] || humanize(type),
+        kind: type === "filme" ? "film" : "series",
+        paid: false,
+      };
+      groups.push({ name: "Diese Seite", items: [it], autoOpen: true });
+    }
+
+    groups.push(...collectPage());
+
+    let total = 0;
+    let hiddenPaid = 0;
+    const nodes = [];
+    for (const g of groups) {
+      const gid = "g:" + g.name;
+      let items = g.items.filter(match);
+      if (CONFIG.hidePaid) {
+        hiddenPaid += items.filter((i) => i.paid).length;
+        items = items.filter((i) => !i.paid);
+      }
+      if (!items.length) continue;
+      total += items.length;
+      const color = BRANCH_COLORS[nodes.length % BRANCH_COLORS.length];
+      const kids = items.map((it) => itemNode(gid, it, lib));
+      if (g.autoOpen && !openState.has(kids[0].id)) openState.set(kids[0].id, true);
+      const limited = !tokens.length && !showAll.has(gid) && kids.length > GROUP_PREVIEW + 2;
+      nodes.push({
+        id: gid,
+        kind: "group",
+        label: g.name,
+        meta: `${items.length}`,
+        color,
+        children: () =>
+          limited
+            ? [...kids.slice(0, GROUP_PREVIEW), { id: gid + "/more", kind: "more", label: `… ${kids.length - GROUP_PREVIEW} weitere`, group: gid }]
+            : kids,
+      });
+    }
+    return { nodes, total, hiddenPaid };
+  }
+
+  // Baum → Zeilen mit fertigem Präfix (│ ├─ └─ ┬ ▸)
+  function flatten(nodes) {
+    const lines = [];
+    function walk(list, segs, parent, color) {
+      list.forEach((n, i) => {
+        const last = i === list.length - 1;
+        const c = n.color || color;
+        const kids = n.children && isOpen(n) ? n.children(n) : null;
+        const hasKids = !!(kids && kids.length);
+        const mark = hasKids ? "┬" : n.children ? "▸" : "─";
+        const idx = lines.length;
+        lines.push({ node: n, segs, glyph: (last ? "└─" : "├─") + mark + " ", color: c, parent });
+        if (hasKids) walk(kids, [...segs, { t: last ? "  " : "│ ", c }], idx, c);
+        if (parent === -1 && !last) lines.push({ spacer: true, segs: [{ t: "│", c: BRANCH_COLORS[(i + 1) % BRANCH_COLORS.length] }] });
+      });
+    }
+    walk(nodes, [], -1, "#888");
+    return lines;
+  }
+
+  // ── Ansicht ───────────────────────────────────────
   function buildListView() {
-    let sel = 0;
-    let items = [];
+    let lines = [];
+    let selId = null;
     let signature = "";
 
     const input = h("input", {
-      class: "search",
+      class: "tfilter",
       type: "text",
-      placeholder: `Filtern…  (Strg+Enter = neue ${SITE.name}-Suche)`,
+      placeholder: "filtern …   (Strg+Enter = Seiten-Suche)",
       autocomplete: "off",
       spellcheck: "false",
     });
-    const list = h("div", { class: "list" });
-    const count = h("span", { class: "count" });
-    const foot = h(
+    const heading = h("div", { class: "thead" });
+    const list = h("div", { class: "tlist" });
+    const status = h("div", { class: "tstatus" });
+    const paidBtn = h("button", {
+      class: "tbtn",
+      onclick: () => {
+        saveConfig("hidePaid", !CONFIG.hidePaid);
+        render(true);
+        input.focus();
+      },
+    });
+    const bar = h(
       "div",
-      { class: "foot" },
-      count,
+      { class: "tbar" },
+      status,
       h("span", { class: "grow" }),
+      paidBtn,
       h("button", {
-        class: "btn",
-        text: "Mehr laden ↓",
-        title: "Seite im Hintergrund nach unten scrollen, damit sie weitere Titel nachlädt",
-        onclick: () => window.scrollTo(0, document.documentElement.scrollHeight),
+        class: "tbtn",
+        text: "mehr laden ↓",
+        title: "Seite im Hintergrund nach unten scrollen, damit sie weitere Reihen nachlädt",
+        onclick: () => {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          input.focus();
+        },
       }),
-      h("button", {
-        class: "btn",
-        text: `🔎 ${SITE.name}-Suche`,
-        onclick: () => input.value.trim() && go(SITE.searchUrl(input.value.trim())),
-      }),
-      h("button", { class: "btn", text: "Schließen", onclick: closeListView }),
+      h("button", { class: "tbtn", text: "Seite zeigen (Esc)", onclick: closeListView }),
     );
-    const hint = h("div", {
-      class: "hint",
-      text: "↑/↓ wählen · Enter öffnen · Strg+Enter neue Suche · Esc / L schließen · ★ = in Meine Serien",
+    const help = h("div", {
+      class: "thelp",
+      text: "↑↓ wählen · → aufklappen · ← zuklappen · Enter öffnen · Shift+Enter Übersicht · Alt+P Paid · Esc Seite · L Baum",
     });
 
+    const selIndex = () => Math.max(0, lines.findIndex((l) => !l.spacer && l.node.id === selId));
+
+    function activate(line, overview) {
+      const n = line.node;
+      if (n.kind === "more") {
+        showAll.add(n.group);
+        render(true);
+      } else if (n.kind === "group" || n.kind === "season") {
+        toggle(n);
+      } else if (overview && n.item) {
+        go(n.item.seriesUrl);
+      } else if (n.href) {
+        go(n.href);
+      }
+    }
+    function toggle(n, force) {
+      if (!n.children) return;
+      openState.set(n.id, force ?? !isOpen(n));
+      render(true);
+    }
+    function move(delta) {
+      let i = selIndex() + delta;
+      while (lines[i] && lines[i].spacer) i += delta;
+      if (lines[i]) {
+        selId = lines[i].node.id;
+        paintSel();
+      }
+    }
+
     function paintSel() {
-      [...list.children].forEach((el, i) => el.classList.toggle("sel", i === sel));
-      list.children[sel]?.scrollIntoView({ block: "nearest" });
+      const i = selIndex();
+      [...list.children].forEach((el, k) => el.classList.toggle("sel", k === i));
+      list.children[i]?.scrollIntoView({ block: "nearest" });
+    }
+
+    function lineEl(l, k) {
+      if (l.spacer) return h("div", { class: "tline spacer" }, ...l.segs.map((s) => h("span", { style: `color:${s.c}`, text: s.t })));
+      const n = l.node;
+      const label = h("span", { class: "tl " + n.kind, text: n.label });
+      return h(
+        "div",
+        {
+          class: "tline",
+          title: n.href || "",
+          onmouseenter: () => {
+            selId = n.id;
+            paintSel();
+          },
+          onclick: (e) => {
+            selId = n.id;
+            // Klick auf die Baum-Linie klappt, Klick auf den Namen öffnet
+            if (e.target.classList.contains("tg") && n.children) toggle(n);
+            else activate(l, e.shiftKey);
+          },
+        },
+        ...l.segs.map((s) => h("span", { class: "tg", style: `color:${s.c}`, text: s.t })),
+        h("span", { class: "tg", style: `color:${l.color}`, text: l.glyph }),
+        n.last ? h("span", { class: "tlast", text: "▶ " }) : null,
+        label,
+        n.meta ? h("span", { class: "tmeta", text: " " + n.meta }) : null,
+        n.type && n.kind === "film" ? h("span", { class: "ttag", text: " " + n.type.toUpperCase() }) : null,
+        n.paid ? h("span", { class: "tpaid", text: ` [${SITE.paidLabel}]` }) : null,
+        n.inLib ? h("span", { class: "tstar", text: " ★" }) : null,
+      );
     }
 
     function render(force) {
-      const all = collectPageTitles();
-      const sig = all.map((e) => e.key + e.title).join("|") + "#" + input.value;
+      const tree = buildTree(input.value);
+      const next = flatten(tree.nodes);
+      const sig = next.map((l) => (l.spacer ? "|" : l.node.id + l.node.label + (l.node.meta || ""))).join("\n");
+      heading.textContent = `● ${SITE.name} — ${cleanTitle(document.title) || location.pathname}`;
+      paidBtn.textContent = CONFIG.hidePaid ? `${SITE.paidLabel}: aus` : `${SITE.paidLabel}: an`;
+      status.textContent =
+        `${tree.total} Titel · ${tree.nodes.length} Reihen` + (tree.hiddenPaid ? ` · ${tree.hiddenPaid} ${SITE.paidLabel} ausgeblendet` : "");
       if (!force && sig === signature) return;
       signature = sig;
-      const tokens = norm(input.value).split(/\s+/).filter(Boolean);
-      items = tokens.length
-        ? all.filter((e) => tokens.every((t) => norm(`${e.title} ${e.type}`).includes(t)))
-        : all;
-      sel = Math.min(sel, Math.max(0, items.length - 1));
-      const lib = loadLib();
+      lines = next;
+      if (!lines.some((l) => !l.spacer && l.node.id === selId)) selId = lines.find((l) => !l.spacer)?.node.id ?? null;
       list.replaceChildren(
-        ...(items.length
-          ? items.map((e, i) =>
-              h(
-                "div",
-                {
-                  class: "lrow" + (i === sel ? " sel" : ""),
-                  title: e.href,
-                  onclick: () => go(e.href),
-                  onmouseenter: () => {
-                    sel = i;
-                    paintSel();
-                  },
-                },
-                h("span", { class: "tag", text: e.type }),
-                h("span", { class: "lt", text: e.title }),
-                lib[e.key] ? h("span", { class: "mark", text: "★" }) : null,
-              ),
-            )
+        ...(lines.length
+          ? lines.map(lineEl)
           : [
               h("div", {
-                class: "empty",
-                text: all.length
-                  ? "Kein Titel passt zum Filter."
-                  : "Noch keine Titel auf der Seite. Die Liste füllt sich automatisch, sobald die Seite Ergebnisse lädt.",
+                class: "tinfo",
+                text: input.value.trim()
+                  ? `Nichts gefunden. Strg+Enter sucht „${input.value.trim()}“ auf ${SITE.name}.`
+                  : "Noch keine Titel auf der Seite – der Baum füllt sich, sobald die Seite lädt.",
               }),
             ]),
       );
-      count.textContent = tokens.length ? `${items.length} von ${all.length} Titeln` : `${all.length} Titel`;
+      paintSel();
     }
 
-    input.addEventListener("input", () => {
-      sel = 0;
-      render(true);
-    });
+    input.addEventListener("input", () => render(true));
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "ArrowDown") {
-        sel = Math.min(sel + 1, items.length - 1);
-        paintSel();
-        e.preventDefault();
-      } else if (e.key === "ArrowUp") {
-        sel = Math.max(sel - 1, 0);
-        paintSel();
-        e.preventDefault();
+      const line = lines[selIndex()];
+      const q = input.value.trim();
+      if (e.key === "ArrowDown") move(1);
+      else if (e.key === "ArrowUp") move(-1);
+      else if (e.key === "ArrowRight" && line && !line.spacer && !input.value) {
+        if (line.node.children && !isOpen(line.node)) toggle(line.node, true);
+        else move(1);
+      } else if (e.key === "ArrowLeft" && line && !line.spacer && !input.value) {
+        if (line.node.children && isOpen(line.node)) toggle(line.node, false);
+        else if (line.parent >= 0) {
+          selId = lines[line.parent].node.id;
+          paintSel();
+        }
       } else if (e.key === "Enter") {
-        const q = input.value.trim();
-        if ((e.ctrlKey || e.metaKey || !items.length) && q) go(SITE.searchUrl(q));
-        else if (items[sel]) go(items[sel].href);
+        if ((e.ctrlKey || e.metaKey) && q) go(SITE.searchUrl(q));
+        else if (line && !line.spacer) activate(line, e.shiftKey);
+        else if (q) go(SITE.searchUrl(q));
+      } else if (e.altKey && (e.key || "").toLowerCase() === "p") {
+        paidBtn.click();
       } else if (e.key === "Escape") {
+        if (input.value) {
+          input.value = "";
+          render(true);
+        } else closeListView();
+      } else if ((e.key || "").toLowerCase() === "l" && !input.value) {
         closeListView();
-      }
+      } else return;
+      e.preventDefault();
     });
     for (const t of ["keyup", "keypress"]) input.addEventListener(t, (e) => e.stopPropagation());
 
-    const panel = h("div", { class: "panel" }, input, list, foot, hint);
-    const backdrop = h(
-      "div",
-      { class: "backdrop", hidden: true, onmousedown: (e) => e.target === backdrop && closeListView() },
-      panel,
-    );
+    const page = h("div", { class: "tpage" }, heading, h("div", { class: "tprompt" }, h("span", { text: "❯ " }), input), list, bar, help);
+    const backdrop = h("div", { class: "tree", hidden: true }, page);
     shadow.append(backdrop);
     return { backdrop, input, render, timer: 0 };
   }
 
-  function openListView(prefill = "") {
+  function treeRefresh(force) {
+    if (listViewOpen()) listView.render(force);
+  }
+
+  function openListView() {
     ensureHost();
     closeOverlay();
     if (!listView) listView = buildListView();
-    listView.input.value = prefill;
+    listView.input.value = "";
     listView.render(true);
     listView.backdrop.hidden = false;
+    updateFab();
     clearInterval(listView.timer);
-    // SPA lädt Ergebnisse nach (Tippen, Lazy-Loading) → laufend nachziehen
-    listView.timer = setInterval(() => listView.render(false), 1000);
+    // SPA lädt Reihen nach (Scrollen, Lazy-Loading) → laufend nachziehen
+    listView.timer = setInterval(() => listView.render(false), 1500);
     setTimeout(() => listView.input.focus(), 0);
   }
   function closeListView() {
     if (!listView) return;
     listView.backdrop.hidden = true;
+    updateFab();
     clearInterval(listView.timer);
   }
   const listViewOpen = () => !!listView && !listView.backdrop.hidden;
 
-  // Auf Suchseiten automatisch öffnen. Einmal pro Suchseiten-Besuch:
-  // wer schließt, bekommt die normale Ansicht, bis er die Suche verlässt.
+  // Auf Übersichts-/Suchseiten automatisch öffnen, sobald die Seite Titel
+  // hat. Nie auf Abspiel-Seiten. Wer mit Esc schließt, sieht die normale
+  // Seite, bis er woanders hin navigiert.
   function setupAutoListView() {
-    let wasSearch = false;
     let lastHref = "";
+    let handled = false;
     setInterval(() => {
-      if (location.href === lastHref) return;
-      lastHref = location.href;
-      const isSearch = SITE.isSearchUrl(location);
-      if (isSearch && !wasSearch && CONFIG.listOnSearch && !overlayOpen()) {
-        // Filter leer lassen: die Seite hat schon nach der Query gesucht
-        openListView("");
+      if (location.href !== lastHref) {
+        lastHref = location.href;
+        handled = false;
+        if (SITE.isWatchUrl(location)) closeListView();
       }
-      if (!isSearch) closeListView();
-      wasSearch = isSearch;
-    }, 500);
+      if (handled || !CONFIG.treeAuto || listViewOpen() || overlayOpen()) return;
+      if (SITE.isWatchUrl(location) || document.querySelector(`.${C_ROOT}`)) {
+        handled = true;
+        return;
+      }
+      if (collectPage().length) {
+        handled = true;
+        openListView();
+      }
+    }, 700);
   }
 
   // ═══════════════════════════════════════════════
