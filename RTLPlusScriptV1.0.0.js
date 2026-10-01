@@ -1,0 +1,988 @@
+// ==UserScript==
+// @name         RTLPlusScript
+// @namespace    SaosOne
+// @version      1.0.0
+// @description  Comfort für RTL+: Theater-Vollbild, das Folgenwechsel übersteht, eigene „Meine Serien“-Liste (zuletzt geschaut, anpinnbar) mit schneller Suche (/ oder Strg+K). Ohne externe Libraries.
+// @match        *://plus.rtl.de/*
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        unsafeWindow
+// @run-at       document-start
+// @noframes
+// ==/UserScript==
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  RTLPlusScript – Comfort-Features für plus.rtl.de
+ *  Schwester-Script: JoynScript (identischer Kern, nur SITE-Block anders)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  WARUM DAS SCRIPT SO GEBAUT IST, WIE ES GEBAUT IST
+ *
+ *  1) KEINE SEITEN-SELEKTOREN
+ *     - Joyn/RTL+ sind React-SPAs mit generierten Klassennamen, die sich
+ *       bei jedem Deploy ändern. Deshalb wird der Player NUR über das
+ *       <video>-Element gefunden: größtes <video> auf der Seite, dann so
+ *       weit nach oben laufen, wie die Eltern ungefähr gleich groß sind
+ *       (= Player-Wrapper inkl. Controls-Overlay).
+ *     - Der Player ist hier NICHT in einem iframe (anders als bei VOE in
+ *       AniScript) → @noframes, kein postMessage nötig.
+ *
+ *  2) VOLLBILD + FOLGENWECHSEL
+ *     - Problem: Der Player macht requestFullscreen() auf seinen Container.
+ *       Beim Folgenwechsel wird dieser Container (oder das <video>) von
+ *       React ersetzt → der Browser beendet das Vollbild.
+ *     - Lösung: requestFullscreen() des Players wird abgefangen und auf
+ *       <html> umgeleitet. <html> wird beim Folgenwechsel nie ersetzt,
+ *       das Vollbild bleibt. Der Player wird per CSS (Theater-Modus) über
+ *       den ganzen Viewport gelegt, und dieser Theater-Modus wird nach
+ *       jedem DOM-Umbau automatisch neu angewendet.
+ *     - exitFullscreen() vom Player OHNE User-Geste (= automatischer
+ *       Folgenwechsel) wird ignoriert. Mit User-Geste (Klick auf den
+ *       Vollbild-Button) geht es normal raus. Esc geht immer.
+ *     - Der Hook muss im Seiten-Kontext laufen (nicht in der Userscript-
+ *       Sandbox), sonst sieht der Player die gepatchten Prototypen nicht.
+ *       Deshalb: <script>-Injektion, Fallback unsafeWindow.
+ *     - Macht der Folgenwechsel doch einen echten Seiten-Reload, ist das
+ *       Vollbild technisch weg (Browser-Regel). Dann bleibt der Theater-
+ *       Modus per sessionStorage erhalten und der NÄCHSTE Klick/Tastendruck
+ *       holt das echte Vollbild zurück (braucht eine User-Geste).
+ *     - Alternativ: T = Theater-Modus dauerhaft + F11 (Browser-Vollbild,
+ *       hängt an keinem Element, überlebt alles).
+ *
+ *  3) „MEINE SERIEN“ STATT DER SEITEN-SUCHE
+ *     - Was länger als minWatchSec läuft (Video > 5 Min, also keine
+ *       Trailer/Werbung), wird lokal gemerkt: Serie, letzte Folge, Zeit.
+ *     - / oder Strg+K öffnet die Liste mit Sofort-Filter. Enter = weiter-
+ *       schauen. Kein Treffer → Seiten-Suche oder Google site:-Suche.
+ *     - Anpinnen (📌) hält Titel oben, in eigener Reihenfolge (↑).
+ *
+ *  4) TRUSTED TYPES / CSP
+ *     - Kein innerHTML (könnte an Trusted Types scheitern), UI komplett
+ *       per createElement in einem Shadow-DOM (Seiten-CSS kommt nicht rein).
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+(function () {
+  "use strict";
+
+  // ═══════════════════════════════════════════════
+  // SITE – der einzige Teil, der sich zwischen den Scripts unterscheidet
+  // ═══════════════════════════════════════════════
+  const SITE = {
+    name: "RTL+",
+    // Serien-/Film-Seiten → Schlüssel für die Liste.
+    // Beispiele: /video-tv/serien/<slug>-<id>
+    //            /video-tv/serien/<slug>-<id>/staffel-1-<id>/episode-3-<titel>-<id>
+    //            /video-tv/filme/<slug>-<id>, /video-tv/shows/<slug>-<id>
+    parse(url) {
+      const m = url.pathname.match(/^\/video-tv\/([^/]+)\/([^/?#]+)/i);
+      if (!m) return null;
+      const type = m[1].toLowerCase();
+      const slug = m[2];
+      return {
+        key: `${type}/${slug}`,
+        seriesUrl: `${url.origin}/video-tv/${type}/${slug}`,
+        title: humanize(slug.replace(/-\d+$/, "")), // ID am Ende weg
+      };
+    },
+    // Abspiel-Seiten. Zusätzlich gilt überall: Video > 5 Min = Hauptinhalt.
+    isWatchUrl: (url) =>
+      /\/episode-|^\/video-tv\/filme\//i.test(url.pathname),
+    searchUrl: (q) =>
+      `https://plus.rtl.de/suche?term=${encodeURIComponent(q)}`,
+    googleSite: "plus.rtl.de",
+    titleSuffix: /\s*[|–—-]\s*RTL\+.*$/i,
+  };
+
+  // ═══════════════════════════════════════════════
+  // SETTINGS – Defaults + Persistenz (GM_setValue)
+  // ═══════════════════════════════════════════════
+  const DEFAULTS = {
+    theaterMode: false, // T: Theater-Modus dauerhaft (überlebt Reloads)
+    fsToTheater: true, // Vollbild-Button des Players → Vollbild auf <html>
+    showFab: true, // ★-Button unten links
+    minWatchSec: 20, // ab so vielen Sekunden Wiedergabe in die Liste
+  };
+
+  function loadConfig() {
+    const cfg = { ...DEFAULTS };
+    try {
+      for (const k of Object.keys(DEFAULTS)) {
+        const v = GM_getValue(k, undefined);
+        if (v !== undefined) cfg[k] = v;
+      }
+    } catch {
+      /* GM nicht verfügbar → Defaults */
+    }
+    return cfg;
+  }
+  function saveConfig(key, value) {
+    CONFIG[key] = value;
+    try {
+      GM_setValue(key, value);
+    } catch {
+      /* egal */
+    }
+  }
+  const CONFIG = loadConfig();
+
+  const P = "us-" + SITE.name.toLowerCase().replace(/[^a-z]/g, ""); // CSS-Präfix
+  const C_ON = P + "-theater-on"; // auf <html>
+  const C_ROOT = P + "-theater-root"; // Player-Wrapper
+  const C_ANC = P + "-theater-anc"; // alle Vorfahren des Wrappers
+  const FS_EVENT = P + "-fs"; // Seiten-Hook → Script
+  const CARRY_KEY = P + "-carry"; // sessionStorage: Vollbild über Reload
+  let root = document.documentElement; // bei document-start evtl. noch null → boot()
+
+  function log(...a) {
+    try {
+      console.log(`[${SITE.name}Script]`, ...a);
+    } catch {}
+  }
+
+  function humanize(slug) {
+    return decodeURIComponent(slug)
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\p{L}/gu, (c) => c.toUpperCase())
+      .trim();
+  }
+
+  // ═══════════════════════════════════════════════
+  // VOLLBILD-HOOK (läuft im Seiten-Kontext!)
+  // Kommuniziert nur über DOM: CustomEvent + data-Attribute auf <html>.
+  // Das klappt über Welten-Grenzen (Sandbox ↔ Seite) hinweg.
+  // ═══════════════════════════════════════════════
+  function pageHook(W, EVT) {
+    const D = W.document;
+    const R = D.documentElement;
+    if (R.dataset.usFsHook === "1") return;
+    const EP = W.Element.prototype;
+    const DP = W.Document.prototype;
+    const origReq = EP.requestFullscreen;
+    const origExit = DP.exitFullscreen;
+    if (!origReq || !origExit) return;
+    R.dataset.usFsHook = "1";
+
+    // Wollte der User wirklich raus? Ein Klick allein reicht nicht: auch
+    // „Nächste Folge“ ist ein Klick, und danach ruft der Player exitFullscreen
+    // auf. Raus nur nach Klick auf ein Vollbild-Bedienelement, Doppelklick
+    // oder Taste F (Esc beendet das Vollbild sowieso browserseitig).
+    let lastDown = { t: 0, el: null };
+    let lastKey = { t: 0, k: "" };
+    let lastDbl = 0;
+    let fsStarter = null;
+    W.addEventListener("pointerdown", (e) => {
+      lastDown = { t: Date.now(), el: e.composedPath ? e.composedPath()[0] : e.target };
+    }, true);
+    W.addEventListener("keydown", (e) => {
+      lastKey = { t: Date.now(), k: String(e.key || "").toLowerCase() };
+    }, true);
+    W.addEventListener("dblclick", () => (lastDbl = Date.now()), true);
+    const FS_RE = /full\s*-?screen|vollbild/i;
+    const isFsControl = (el) => {
+      for (let i = 0; el && i < 6; i++, el = el.parentElement) {
+        if (el === fsStarter) return true;
+        if (!el.getAttribute) continue;
+        const txt = [
+          el.getAttribute("aria-label"),
+          el.getAttribute("title"),
+          el.getAttribute("data-testid"),
+          typeof el.className === "string" ? el.className : "",
+        ].join(" ");
+        if (FS_RE.test(txt)) return true;
+      }
+      return false;
+    };
+    const userWantsExit = () => {
+      const now = Date.now();
+      if (now - lastKey.t < 1000 && lastKey.k === "f") return true;
+      if (now - lastDbl < 1000) return true;
+      return now - lastDown.t < 1500 && isFsControl(lastDown.el);
+    };
+    const emit = (detail) => {
+      R.dataset.usFsActive = detail === "on" ? "1" : "0";
+      D.dispatchEvent(new W.CustomEvent(EVT, { detail }));
+    };
+    const hasVideo = (el) =>
+      !!el && (el.tagName === "VIDEO" || !!(el.querySelector && el.querySelector("video")));
+
+    EP.requestFullscreen = function (...args) {
+      if (R.dataset.usFsRedirect !== "1" || this === R || !hasVideo(this)) {
+        return origReq.apply(this, args);
+      }
+      if (D.fullscreenElement) {
+        // Schon im (umgeleiteten) Vollbild: Vollbild-Button = Toggle raus,
+        // automatischer Re-Request nach Folgenwechsel = ignorieren.
+        if (userWantsExit()) {
+          emit("off");
+          return origExit.call(D);
+        }
+        return Promise.resolve();
+      }
+      fsStarter = Date.now() - lastDown.t < 1500 ? lastDown.el : null;
+      emit("on");
+      return origReq.apply(R, args);
+    };
+    if (EP.webkitRequestFullscreen) EP.webkitRequestFullscreen = EP.requestFullscreen;
+
+    DP.exitFullscreen = function (...args) {
+      if (R.dataset.usFsActive === "1") {
+        // Player will beim Folgenwechsel raus → nein.
+        if (!userWantsExit()) return Promise.resolve();
+        emit("off");
+      }
+      return origExit.apply(this, args);
+    };
+    if (DP.webkitExitFullscreen) DP.webkitExitFullscreen = DP.exitFullscreen;
+  }
+
+  function installPageHook() {
+    root.dataset.usFsRedirect = CONFIG.fsToTheater ? "1" : "0";
+    try {
+      const s = document.createElement("script");
+      s.textContent = `(${pageHook})(window, ${JSON.stringify(FS_EVENT)});`;
+      root.appendChild(s);
+      s.remove();
+    } catch {
+      /* CSP / Trusted Types → Fallback unten */
+    }
+    if (root.dataset.usFsHook !== "1") {
+      try {
+        pageHook(typeof unsafeWindow !== "undefined" ? unsafeWindow : window, FS_EVENT);
+      } catch (e) {
+        log("Vollbild-Hook nicht installierbar:", e);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  // THEATER-MODUS (CSS)
+  // ═══════════════════════════════════════════════
+  // Zwei Quellen, beide führen zum selben CSS-Zustand:
+  //  - CONFIG.theaterMode: dauerhaft, per T
+  //  - sessionTheater: aktiv, solange das umgeleitete Vollbild läuft
+  let sessionTheater = false;
+  let theaterRoot = null;
+  let refullscreenPending = false;
+
+  const PAGE_CSS = `
+    html.${C_ON}, html.${C_ON} body { overflow: hidden !important; }
+    .${C_ANC} {
+      transform: none !important; filter: none !important;
+      contain: none !important; will-change: auto !important;
+      perspective: none !important; z-index: 2147483000 !important;
+    }
+    .${C_ROOT} {
+      position: fixed !important; inset: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      max-width: none !important; max-height: none !important;
+      min-width: 0 !important; min-height: 0 !important;
+      margin: 0 !important; padding: 0 !important; border: 0 !important;
+      border-radius: 0 !important; transform: none !important;
+      z-index: 2147483000 !important; background: #000 !important;
+    }
+    .${C_ROOT} video {
+      width: 100% !important; height: 100% !important;
+      max-width: none !important; max-height: none !important;
+      object-fit: contain !important;
+    }
+  `;
+
+  function isMainVideo(v) {
+    return Number.isFinite(v.duration) && v.duration > 300;
+  }
+
+  function findVideo() {
+    let best = null;
+    let bestArea = 0;
+    for (const v of document.querySelectorAll("video")) {
+      const r = v.getBoundingClientRect();
+      const a = r.width * r.height;
+      if (a > bestArea) {
+        best = v;
+        bestArea = a;
+      }
+    }
+    return best;
+  }
+
+  // Player-Wrapper = höchster Vorfahre, der noch ungefähr so groß ist wie
+  // das Video (Controls-Overlays liegen da drin).
+  function findPlayerRoot(video) {
+    const vr = video.getBoundingClientRect();
+    if (vr.width < 80 || vr.height < 45) return null; // noch nicht gelayoutet
+    let best = video;
+    for (let el = video.parentElement; el && el !== document.body && el !== root; el = el.parentElement) {
+      const r = el.getBoundingClientRect();
+      if (r.width > vr.width * 1.15 + 4 || r.height > vr.height * 1.3 + 4) break;
+      best = el;
+    }
+    return best;
+  }
+
+  function clearTheaterMarks() {
+    for (const el of document.querySelectorAll(`.${C_ROOT}, .${C_ANC}`)) {
+      el.classList.remove(C_ROOT, C_ANC);
+    }
+    root.classList.remove(C_ON);
+    theaterRoot = null;
+  }
+
+  function markTheater(playerRoot) {
+    playerRoot.classList.add(C_ROOT);
+    for (let el = playerRoot.parentElement; el && el !== root; el = el.parentElement) {
+      el.classList.add(C_ANC);
+    }
+    root.classList.add(C_ON);
+    theaterRoot = playerRoot;
+    updateFab();
+  }
+
+  function theaterWanted() {
+    return CONFIG.theaterMode || sessionTheater;
+  }
+
+  // Läuft periodisch: React baut den Player beim Folgenwechsel neu und
+  // wirft dabei unsere Klassen weg → einfach neu anwenden.
+  function theaterTick() {
+    if (!theaterWanted()) {
+      if (theaterRoot || root.classList.contains(C_ON)) {
+        clearTheaterMarks();
+        updateFab();
+      }
+      return;
+    }
+    const v = findVideo();
+    if (
+      theaterRoot &&
+      theaterRoot.isConnected &&
+      theaterRoot.classList.contains(C_ROOT) &&
+      root.classList.contains(C_ON) &&
+      (!v || theaterRoot.contains(v))
+    ) {
+      return; // alles noch korrekt
+    }
+    if (!v) {
+      if (theaterRoot && !theaterRoot.isConnected) clearTheaterMarks();
+      return;
+    }
+    // Persistenter Modus nur auf Abspiel-Seiten / bei Hauptinhalt, sonst
+    // würde jeder Autoplay-Trailer auf der Startseite bildschirmfüllend.
+    if (!sessionTheater && !SITE.isWatchUrl(location) && !isMainVideo(v)) return;
+    clearTheaterMarks(); // erst messen ohne unser CSS
+    const pr = findPlayerRoot(v);
+    if (pr) markTheater(pr);
+  }
+
+  function setSessionTheater(on) {
+    sessionTheater = on;
+    root.dataset.usFsActive = on ? "1" : "0";
+    theaterTick();
+    updateFab();
+  }
+
+  function toggleTheater() {
+    const next = !(CONFIG.theaterMode || sessionTheater);
+    saveConfig("theaterMode", next);
+    if (!next && sessionTheater) {
+      setSessionTheater(false);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+    theaterTick();
+    toast(next ? "Theater-Modus AN (F11 = echtes Vollbild)" : "Theater-Modus AUS");
+  }
+
+  function setupFullscreenSync() {
+    document.addEventListener(FS_EVENT, (e) => {
+      setSessionTheater(e.detail === "on");
+    });
+    document.addEventListener("fullscreenchange", () => {
+      // Esc oder Browser hat das Vollbild beendet
+      if (!document.fullscreenElement && sessionTheater) setSessionTheater(false);
+    });
+
+    // Echter Seiten-Reload während Vollbild → Theater mitnehmen,
+    // nächste User-Geste holt das echte Vollbild zurück.
+    window.addEventListener("pagehide", () => {
+      try {
+        if (sessionTheater && document.fullscreenElement) {
+          sessionStorage.setItem(CARRY_KEY, String(Date.now() + 90000));
+        }
+      } catch {}
+    });
+    let carry = 0;
+    try {
+      carry = Number(sessionStorage.getItem(CARRY_KEY)) || 0;
+      sessionStorage.removeItem(CARRY_KEY);
+    } catch {}
+    if (carry > Date.now()) {
+      sessionTheater = true;
+      refullscreenPending = true;
+      const regain = (e) => {
+        if (!refullscreenPending) return;
+        refullscreenPending = false;
+        if (e.type === "keydown" && e.key === "Escape") {
+          setSessionTheater(false);
+          return;
+        }
+        if (sessionTheater && !document.fullscreenElement) {
+          root.dataset.usFsActive = "1";
+          root.requestFullscreen().catch(() => {});
+        }
+      };
+      window.addEventListener("pointerdown", regain, { capture: true, passive: true });
+      window.addEventListener("keydown", regain, { capture: true, passive: true });
+      setTimeout(() => toast("Klick oder Taste → zurück ins Vollbild"), 1500);
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  // BIBLIOTHEK – „Meine Serien“ (lokal, GM-Storage)
+  // ═══════════════════════════════════════════════
+  const LIB_KEY = "library";
+
+  function loadLib() {
+    try {
+      return JSON.parse(GM_getValue(LIB_KEY, "{}")) || {};
+    } catch {
+      return {};
+    }
+  }
+  function saveLib(lib) {
+    try {
+      GM_setValue(LIB_KEY, JSON.stringify(lib));
+    } catch {}
+  }
+
+  function cleanTitle(t) {
+    return (t || "").replace(SITE.titleSuffix, "").trim();
+  }
+
+  // Auf der Serien-Übersicht selbst ist die h1 der beste Titel.
+  function bestTitle(info) {
+    const onSeriesPage =
+      location.pathname.replace(/\/$/, "") === new URL(info.seriesUrl).pathname;
+    const h1 = onSeriesPage && document.querySelector("h1")?.textContent?.trim();
+    return h1 && h1.length < 120 ? h1 : info.title;
+  }
+
+  function upsertCurrent(extra = {}) {
+    const info = SITE.parse(location);
+    if (!info) return null;
+    const lib = loadLib();
+    const old = lib[info.key] || {};
+    lib[info.key] = {
+      key: info.key,
+      title: old.title || bestTitle(info),
+      seriesUrl: info.seriesUrl,
+      lastUrl: old.lastUrl || info.seriesUrl,
+      lastLabel: old.lastLabel || "",
+      pct: old.pct || 0,
+      pinned: !!old.pinned,
+      pinOrder: old.pinOrder || 0,
+      ts: Date.now(),
+      ...extra,
+    };
+    saveLib(lib);
+    return lib[info.key];
+  }
+
+  function updateEntry(key, patch) {
+    const lib = loadLib();
+    if (!lib[key]) return;
+    Object.assign(lib[key], patch);
+    saveLib(lib);
+  }
+  function removeEntry(key) {
+    const lib = loadLib();
+    delete lib[key];
+    saveLib(lib);
+  }
+
+  function sortedEntries() {
+    const all = Object.values(loadLib());
+    const pinned = all.filter((e) => e.pinned).sort((a, b) => a.pinOrder - b.pinOrder);
+    const rest = all.filter((e) => !e.pinned).sort((a, b) => b.ts - a.ts);
+    return [...pinned, ...rest];
+  }
+
+  function togglePin(key) {
+    const lib = loadLib();
+    const e = lib[key];
+    if (!e) return;
+    e.pinned = !e.pinned;
+    if (e.pinned) {
+      const max = Math.max(0, ...Object.values(lib).filter((x) => x.pinned && x !== e).map((x) => x.pinOrder || 0));
+      e.pinOrder = max + 1;
+    }
+    saveLib(lib);
+  }
+
+  function movePinnedUp(key) {
+    const lib = loadLib();
+    const pinned = Object.values(lib).filter((e) => e.pinned).sort((a, b) => a.pinOrder - b.pinOrder);
+    const i = pinned.findIndex((e) => e.key === key);
+    if (i <= 0) return;
+    [pinned[i - 1], pinned[i]] = [pinned[i], pinned[i - 1]];
+    pinned.forEach((e, idx) => (lib[e.key].pinOrder = idx + 1));
+    saveLib(lib);
+  }
+
+  // Wiedergabe beobachten: erst nach minWatchSec echter Wiedergabe von
+  // Hauptinhalt (> 5 Min) eintragen, dann alle 15s Stand aktualisieren.
+  function setupWatchTracking() {
+    let playedSec = 0;
+    let lastHref = location.href;
+    let sinceSave = 0;
+    setInterval(() => {
+      if (location.href !== lastHref) {
+        lastHref = location.href;
+        playedSec = 0;
+        sinceSave = 0;
+      }
+      const v = findVideo();
+      if (!v || v.paused || v.ended || !isMainVideo(v)) return;
+      if (!SITE.parse(location)) return;
+      playedSec += 5;
+      sinceSave += 5;
+      if (playedSec < CONFIG.minWatchSec) return;
+      if (playedSec - 5 >= CONFIG.minWatchSec && sinceSave < 15) return;
+      sinceSave = 0;
+      upsertCurrent({
+        lastUrl: location.href,
+        lastLabel: cleanTitle(document.title),
+        pct: Math.round((v.currentTime / v.duration) * 100),
+      });
+    }, 5000);
+  }
+
+  // ═══════════════════════════════════════════════
+  // UI – Shadow-DOM: ★-Button, Overlay „Meine Serien“, Toast
+  // ═══════════════════════════════════════════════
+  const UI_CSS = `
+    :host { all: initial; }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .fab {
+      position: fixed; left: 14px; bottom: 14px; z-index: 2147483646;
+      width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
+      background: rgba(20,20,35,.85); color: #ffd54a; font-size: 20px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.45); opacity: .65; transition: opacity .15s;
+    }
+    .fab:hover { opacity: 1; }
+    .fab[hidden] { display: none; }
+    .backdrop {
+      position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.55);
+      display: flex; justify-content: center; align-items: flex-start; padding-top: 8vh;
+    }
+    .backdrop[hidden] { display: none; }
+    .panel {
+      width: min(680px, 94vw); max-height: 80vh; display: flex; flex-direction: column;
+      background: #16161f; color: #eee; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,.6); border: 1px solid #2c2c3a;
+    }
+    .search {
+      width: 100%; padding: 16px 18px; font-size: 17px; border: 0; outline: 0;
+      background: #1e1e2a; color: #fff; border-bottom: 1px solid #2c2c3a;
+    }
+    .list { overflow-y: auto; flex: 1; }
+    .row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      cursor: pointer; border-bottom: 1px solid #22222d;
+    }
+    .row.sel, .row:hover { background: #262636; }
+    .main { flex: 1; min-width: 0; }
+    .title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sub { font-size: 12px; color: #9a9ab0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .bar { height: 3px; background: #333; border-radius: 2px; margin-top: 5px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; background: #4caf50; }
+    .btn {
+      border: 0; background: #2a2a3a; color: #ddd; border-radius: 6px; cursor: pointer;
+      padding: 5px 8px; font-size: 12px; white-space: nowrap;
+    }
+    .btn:hover { background: #3a3a50; color: #fff; }
+    .btn.on { background: #4a3b10; color: #ffd54a; }
+    .empty { padding: 18px; color: #9a9ab0; font-size: 14px; line-height: 1.5; }
+    .foot {
+      display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px;
+      background: #1a1a24; border-top: 1px solid #2c2c3a;
+    }
+    .foot .grow { flex: 1; }
+    .settings { padding: 10px 14px; background: #1a1a24; border-top: 1px solid #2c2c3a; font-size: 13px; }
+    .settings[hidden] { display: none; }
+    .settings label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+    .hint { font-size: 11px; color: #777; padding: 6px 14px 10px; background: #1a1a24; }
+    .toast {
+      position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
+      z-index: 2147483647; padding: 9px 16px; border-radius: 8px;
+      background: rgba(20,20,35,.92); color: #fff; font: 600 14px system-ui, sans-serif;
+      box-shadow: 0 4px 12px rgba(0,0,0,.4); pointer-events: none;
+      opacity: 0; transition: opacity .2s;
+    }
+  `;
+
+  function h(tag, props = {}, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of kids.flat()) if (c != null) el.append(c);
+    return el;
+  }
+
+  function addSheet(target, css) {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      target.adoptedStyleSheets = [...target.adoptedStyleSheets, sheet];
+    } catch {
+      const st = document.createElement("style");
+      st.textContent = css;
+      (target === document ? document.head || root : target).appendChild(st);
+    }
+  }
+
+  let shadow = null;
+  let host = null;
+  let fab = null;
+  let toastEl = null;
+  let toastTimer = null;
+  let overlay = null; // { backdrop, input, list, settings, render }
+
+  function ensureHost() {
+    if (host && host.isConnected) return;
+    if (!host) {
+      host = document.createElement(P + "-ui");
+      shadow = host.attachShadow({ mode: "open" });
+      addSheet(shadow, UI_CSS);
+      fab = h("button", { class: "fab", title: "Meine Serien (/ oder Strg+K)", text: "★", onclick: openOverlay });
+      toastEl = h("div", { class: "toast" });
+      shadow.append(fab, toastEl);
+    }
+    // an <html> statt <body>: React ersetzt body-Inhalte, und im
+    // umgeleiteten Vollbild (<html>) bleibt die UI so sichtbar
+    root.appendChild(host);
+    updateFab();
+  }
+
+  function updateFab() {
+    if (!fab) return;
+    fab.hidden = !CONFIG.showFab || root.classList.contains(C_ON);
+  }
+
+  function toast(text, ms = 1600) {
+    ensureHost();
+    toastEl.textContent = text;
+    toastEl.style.opacity = "1";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toastEl.style.opacity = "0"), ms);
+  }
+
+  function relTime(ts) {
+    const s = (Date.now() - ts) / 1000;
+    if (s < 90) return "gerade eben";
+    if (s < 3600) return `vor ${Math.round(s / 60)} Min`;
+    if (s < 86400) return `vor ${Math.round(s / 3600)} Std`;
+    const d = Math.round(s / 86400);
+    return d === 1 ? "gestern" : `vor ${d} Tagen`;
+  }
+
+  function norm(s) {
+    return (s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/ß/g, "ss");
+  }
+
+  function filterEntries(q) {
+    const tokens = norm(q).split(/\s+/).filter(Boolean);
+    const all = sortedEntries();
+    if (!tokens.length) return all;
+    const hits = all.filter((e) => {
+      const hay = norm(`${e.title} ${e.lastLabel} ${e.key}`);
+      return tokens.every((t) => hay.includes(t));
+    });
+    // Titel-Anfang-Treffer nach vorne, sonst Reihenfolge behalten
+    const nq = norm(q).trim();
+    return hits.sort((a, b) => Number(norm(b.title).startsWith(nq)) - Number(norm(a.title).startsWith(nq)));
+  }
+
+  function go(url) {
+    closeOverlay();
+    location.href = url;
+  }
+
+  function buildOverlay() {
+    let sel = 0;
+    let items = [];
+
+    const input = h("input", {
+      class: "search",
+      type: "text",
+      placeholder: `Meine ${SITE.name}-Serien durchsuchen…  (Enter = weiterschauen)`,
+      autocomplete: "off",
+      spellcheck: "false",
+    });
+    const list = h("div", { class: "list" });
+
+    const cb = (key, label, after) =>
+      h(
+        "label",
+        {},
+        h("input", {
+          type: "checkbox",
+          checked: CONFIG[key],
+          onchange: (e) => {
+            saveConfig(key, e.target.checked);
+            if (after) after();
+          },
+        }),
+        label,
+      );
+    const settings = h(
+      "div",
+      { class: "settings", hidden: true },
+      cb("fsToTheater", "Vollbild-Button des Players → Vollbild, das Folgenwechsel übersteht", () => {
+        root.dataset.usFsRedirect = CONFIG.fsToTheater ? "1" : "0";
+      }),
+      cb("theaterMode", "Theater-Modus dauerhaft (T)", theaterTick),
+      cb("showFab", "★-Button unten links anzeigen", updateFab),
+      h(
+        "div",
+        { style: "margin-top:8px" },
+        h("button", {
+          class: "btn",
+          text: "Liste komplett leeren",
+          onclick: () => {
+            if (confirm(`Alle Einträge aus „Meine ${SITE.name}-Serien“ löschen?`)) {
+              saveLib({});
+              render();
+            }
+          },
+        }),
+      ),
+    );
+
+    const searchSiteBtn = h("button", { class: "btn", onclick: () => go(SITE.searchUrl(input.value.trim())) });
+    const googleBtn = h("button", {
+      class: "btn",
+      text: "Google",
+      title: `Google-Suche nur auf ${SITE.googleSite} – findet oft mehr als die Seiten-Suche`,
+      onclick: () =>
+        go(`https://www.google.com/search?q=${encodeURIComponent(`site:${SITE.googleSite} ${input.value.trim()}`)}`),
+    });
+    const foot = h(
+      "div",
+      { class: "foot" },
+      searchSiteBtn,
+      googleBtn,
+      h("span", { class: "grow" }),
+      h("button", {
+        class: "btn",
+        text: "+ Diese Seite merken",
+        title: "Aktuelle Serie/Film ohne Anschauen in die Liste aufnehmen",
+        onclick: () => {
+          const e = upsertCurrent();
+          toast(e ? `„${e.title}“ gemerkt` : "Keine Serien-/Film-Seite erkannt");
+          render();
+        },
+      }),
+      h("button", { class: "btn", text: "⚙", title: "Einstellungen", onclick: () => (settings.hidden = !settings.hidden) }),
+    );
+    const hint = h("div", {
+      class: "hint",
+      text: "↑/↓ wählen · Enter weiterschauen · Strg+Enter Seiten-Suche · Esc schließen · T Theater-Modus",
+    });
+
+    function row(e, i) {
+      const sub = [e.lastLabel, relTime(e.ts)].filter(Boolean).join(" · ");
+      const stop = (fn) => (ev) => {
+        ev.stopPropagation();
+        fn();
+        render();
+      };
+      return h(
+        "div",
+        {
+          class: "row" + (i === sel ? " sel" : ""),
+          title: e.lastUrl,
+          onclick: () => go(e.lastUrl),
+          onmouseenter: () => {
+            sel = i;
+            paintSel();
+          },
+        },
+        h(
+          "div",
+          { class: "main" },
+          h("div", { class: "title", text: (e.pinned ? "📌 " : "") + e.title }),
+          h("div", { class: "sub", text: sub }),
+          e.pct ? h("div", { class: "bar" }, h("i", { style: `width:${Math.min(100, e.pct)}%` })) : null,
+        ),
+        e.pinned ? h("button", { class: "btn", text: "↑", title: "Weiter nach oben", onclick: stop(() => movePinnedUp(e.key)) }) : null,
+        h("button", {
+          class: "btn" + (e.pinned ? " on" : ""),
+          text: "📌",
+          title: e.pinned ? "Lösen" : "Oben anpinnen",
+          onclick: stop(() => togglePin(e.key)),
+        }),
+        h("button", {
+          class: "btn",
+          text: "Übersicht",
+          title: e.seriesUrl,
+          onclick: (ev) => {
+            ev.stopPropagation();
+            go(e.seriesUrl);
+          },
+        }),
+        h("button", { class: "btn", text: "✕", title: "Aus Liste entfernen", onclick: stop(() => removeEntry(e.key)) }),
+      );
+    }
+
+    function paintSel() {
+      [...list.children].forEach((el, i) => el.classList.toggle("sel", i === sel));
+      list.children[sel]?.scrollIntoView({ block: "nearest" });
+    }
+
+    function render() {
+      const q = input.value.trim();
+      items = filterEntries(q);
+      sel = Math.min(sel, Math.max(0, items.length - 1));
+      list.replaceChildren(
+        ...(items.length
+          ? items.map(row)
+          : [
+              h("div", {
+                class: "empty",
+                text: q
+                  ? `Nichts in deiner Liste zu „${q}“. Enter = auf ${SITE.name} suchen.`
+                  : `Noch leer. Alles, was du länger als ${CONFIG.minWatchSec}s schaust, landet automatisch hier. Oder „+ Diese Seite merken“.`,
+              }),
+            ]),
+      );
+      searchSiteBtn.textContent = q ? `🔎 „${q}“ auf ${SITE.name}` : `🔎 ${SITE.name}-Suche`;
+    }
+
+    input.addEventListener("input", () => {
+      sel = 0;
+      render();
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // Seite soll unsere Tipperei nicht als Hotkeys sehen
+      if (e.key === "ArrowDown") {
+        sel = Math.min(sel + 1, items.length - 1);
+        paintSel();
+        e.preventDefault();
+      } else if (e.key === "ArrowUp") {
+        sel = Math.max(sel - 1, 0);
+        paintSel();
+        e.preventDefault();
+      } else if (e.key === "Enter") {
+        const q = input.value.trim();
+        if ((e.ctrlKey || e.metaKey || !items.length) && q) go(SITE.searchUrl(q));
+        else if (items[sel]) go(items[sel].lastUrl);
+      } else if (e.key === "Escape") {
+        closeOverlay();
+      }
+    });
+    for (const t of ["keyup", "keypress"]) input.addEventListener(t, (e) => e.stopPropagation());
+
+    const panel = h("div", { class: "panel" }, input, list, foot, settings, hint);
+    const backdrop = h(
+      "div",
+      { class: "backdrop", hidden: true, onmousedown: (e) => e.target === backdrop && closeOverlay() },
+      panel,
+    );
+    shadow.append(backdrop);
+    return { backdrop, input, render };
+  }
+
+  function openOverlay() {
+    ensureHost();
+    if (!overlay) overlay = buildOverlay();
+    overlay.input.value = "";
+    overlay.render();
+    overlay.backdrop.hidden = false;
+    setTimeout(() => overlay.input.focus(), 0);
+  }
+  function closeOverlay() {
+    if (overlay) overlay.backdrop.hidden = true;
+  }
+  const overlayOpen = () => !!overlay && !overlay.backdrop.hidden;
+
+  // ═══════════════════════════════════════════════
+  // HOTKEYS (capture → wir sind vor dem Player dran)
+  // ═══════════════════════════════════════════════
+  function isTyping(e) {
+    const t = e.composedPath ? e.composedPath()[0] : e.target;
+    if (!t || !t.tagName) return false;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable;
+  }
+
+  function setupHotkeys() {
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (isTyping(e)) return;
+        const key = (e.key || "").toLowerCase();
+        const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+        let handled = true;
+        if ((e.key === "/" && plain) || ((e.ctrlKey || e.metaKey) && !e.altKey && key === "k")) {
+          overlayOpen() ? closeOverlay() : openOverlay();
+        } else if (plain && !e.shiftKey && key === "t") {
+          toggleTheater();
+        } else if (e.key === "Escape" && overlayOpen()) {
+          closeOverlay();
+        } else if (e.key === "Escape" && CONFIG.theaterMode && !document.fullscreenElement) {
+          toggleTheater();
+        } else {
+          handled = false;
+        }
+        if (handled) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      },
+      true,
+    );
+  }
+
+  // ═══════════════════════════════════════════════
+  // START
+  // ═══════════════════════════════════════════════
+  function boot() {
+    root = document.documentElement;
+    installPageHook(); // so früh wie möglich, vor dem Player-Code
+    setupFullscreenSync();
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init, { once: true });
+    } else {
+      init();
+    }
+  }
+
+  function init() {
+    addSheet(document, PAGE_CSS);
+    ensureHost();
+    setupHotkeys();
+    setupWatchTracking();
+    setInterval(theaterTick, 700);
+    setInterval(ensureHost, 3000); // falls die Seite <html>-Kinder aufräumt
+    theaterTick();
+    log("geladen");
+  }
+
+  if (document.documentElement) {
+    boot();
+  } else {
+    // ganz früher document-start: auf <html> warten
+    new MutationObserver((_, obs) => {
+      if (!document.documentElement) return;
+      obs.disconnect();
+      boot();
+    }).observe(document, { childList: true });
+  }
+})();

@@ -1,4 +1,56 @@
-# AniScript Lite
+# Userscripts
+
+Comfort-[ScriptCat](https://scriptcat.org/)-Userscripts für Streaming-Seiten, deren eigene UI nervt.
+
+| Script | Seite | Kurz |
+|--------|-------|------|
+| [`AniScriptV1.0.0.js`](AniScriptV1.0.0.js) | aniworld.to, s.to | Autoplay, Intro-Skip, Auto-nächste-Folge, Skip-Hotkeys, Fortschritt |
+| [`JoynScriptV1.0.0.js`](JoynScriptV1.0.0.js) | joyn.de | Vollbild übersteht Folgenwechsel, „Meine Serien“-Liste + Schnellsuche |
+| [`RTLPlusScriptV1.0.0.js`](RTLPlusScriptV1.0.0.js) | plus.rtl.de | wie JoynScript |
+
+---
+
+## JoynScript & RTLPlusScript
+
+Zwei Scripts mit identischem Kern, nur der `SITE`-Block oben ist pro Seite anders. Kein `@require`, alles Vanilla-JS.
+
+### Features
+
+- **Vollbild, das den Folgenwechsel übersteht.** Den normalen Vollbild-Button des Players (oder dessen `F`) einfach benutzen. Das Script leitet das Vollbild auf `<html>` um und legt den Player per CSS über den ganzen Bildschirm. Wenn der Player beim Folgenwechsel neu gebaut wird, bleibt das Vollbild an, und der Theater-Modus wird automatisch neu angewendet.
+- **Theater-Modus `T`.** Player füllt dauerhaft das Fenster, auch nach Reloads. Zusammen mit `F11` ergibt das echtes Vollbild, das wirklich alles übersteht.
+- **„Meine Serien“ (`/` oder `Strg+K`, oder ★ unten links).** Alles, was du länger als 20 s schaust (nur Videos > 5 Min, also keine Trailer oder Werbung), landet automatisch in einer lokalen Liste: zuletzt geschaut oben, letzte Folge, Fortschrittsbalken. Tippen filtert sofort, `Enter` öffnet die letzte Folge.
+  - 📌 pinnt Titel dauerhaft nach oben, ↑ sortiert die angepinnten
+  - „+ Diese Seite merken“ nimmt eine Serie auf, ohne sie zu schauen
+  - Kein Treffer? `Enter` / `Strg+Enter` → Seiten-Suche, oder **Google** mit `site:`, das findet oft mehr als die Seiten-Suche
+  - ⚙ im Overlay: Vollbild-Umleitung an/aus, Theater dauerhaft, ★-Button, Liste leeren
+
+### Tasten
+
+| Taste | Aktion |
+|-------|--------|
+| `/`, `Strg+K` | „Meine Serien“ öffnen/schließen |
+| `T` | Theater-Modus an/aus |
+| `Esc` | Overlay schließen / Vollbild bzw. Theater beenden |
+| Player-Vollbild-Button, `F`, Doppelklick | Vollbild an/aus (wird umgeleitet) |
+
+### Wie das Vollbild funktioniert
+
+Der Player ruft beim Vollbild `requestFullscreen()` auf seinem Container auf. Beim Folgenwechsel ersetzt React genau diesen Container, und der Browser beendet das Vollbild. Das Script hängt sich deshalb im Seiten-Kontext in `requestFullscreen` und `exitFullscreen` ein:
+
+- `requestFullscreen()` auf einem Element mit `<video>` → stattdessen Vollbild auf `<html>` (wird nie ersetzt) und CSS-Theater auf den Player-Wrapper.
+- `exitFullscreen()` vom Player wird **ignoriert**, außer der letzte Klick war auf einem Vollbild-Bedienelement (`aria-label`/`title` mit „Vollbild“/„Fullscreen“), ein Doppelklick, oder die Taste `F`. Ein Klick auf „Nächste Folge“ wirft dich also nicht raus. `Esc` geht immer.
+- Der Player-Wrapper wird nicht über Klassennamen gesucht (die ändern sich bei jedem Deploy), sondern über das größte `<video>`: Vorfahren, die ungefähr gleich groß sind, gehören zum Player.
+- Macht der Folgenwechsel doch einen echten Seiten-Reload, ist das Vollbild weg (Browser-Regel, braucht eine User-Geste). Der Theater-Modus bleibt aber erhalten, und **der nächste Klick oder Tastendruck holt das Vollbild zurück**.
+
+### Installation
+
+1. [ScriptCat](https://scriptcat.org/) installieren
+2. Script installieren (`JoynScriptV1.0.0.js` bzw. `RTLPlusScriptV1.0.0.js`)
+3. joyn.de / plus.rtl.de öffnen
+
+---
+
+## AniScript Lite
 
 A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniworld.to) and [s.to](https://s.to). Comfort features for the VOE/JWPlayer video player: autoplay, intro skip, auto-next-episode, skip hotkeys, and watch-progress tracking.
 
@@ -8,7 +60,7 @@ A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniwo
 
 ---
 
-## Features
+### Features
 
 - **Autoplay** — automatically loads the next episode when the current one ends
 - **Auto intro skip** — jumps forward to a configured second once the video starts
@@ -22,7 +74,7 @@ A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniwo
 
 ---
 
-## Installation
+### Installation
 
 1. Install [ScriptCat](https://scriptcat.org/)
 2. In the extension's browser permissions, set site access to **"On all sites"** — VOE rotates through mirror domains, so a fixed match list won't keep up
@@ -31,7 +83,7 @@ A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniwo
 
 ---
 
-## Usage
+### Usage
 
 | Action | How |
 |--------|-----|
@@ -43,7 +95,7 @@ A [ScriptCat](https://scriptcat.org/) userscript for [aniworld.to](https://aniwo
 
 ---
 
-## How Fullscreen Works
+### How Fullscreen Works
 
 `F` doesn't call the real Fullscreen API. Instead it's a CSS "theater mode": the player's container is pinned `position:fixed` over the whole viewport and the iframe is stretched to 100%. No browser fullscreen state is ever entered.
 
@@ -59,7 +111,7 @@ Settings panel and toast notifications mount onto `document.fullscreenElement` w
 
 ---
 
-## Settings
+### Settings
 
 Right-click the toggle switch to open settings:
 
@@ -71,7 +123,7 @@ Right-click the toggle switch to open settings:
 
 ---
 
-## Supported Sites
+### Supported Sites
 
 | Site | Status |
 |------|--------|
@@ -88,4 +140,4 @@ Right-click the toggle switch to open settings:
 
 ## Credits
 
-Based on AniScript Lite 0.1.5 by [Saos-EBB](https://github.com/Saos-EBB).
+AniScript Lite based on AniScript Lite 0.1.5 by [Saos-EBB](https://github.com/Saos-EBB).
