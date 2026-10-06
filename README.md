@@ -170,10 +170,14 @@ Right-click the toggle switch to open settings:
 
 ## License
 
-[GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html)
+[MIT](LICENSE): use it however you like.
 
 ---
 
-## Credits
+## Credits / Herkunft
 
-AniScript Lite based on AniScript Lite 0.1.5 by [Saos-EBB](https://github.com/Saos-EBB).
+All scripts in this repo are written by me ([Saos-EBB](https://github.com/Saos-EBB)).
+
+AniScript started out as an adaptation of a much larger third-party userscript (~5000 lines). The current version is a **complete rewrite from scratch** (~1000 lines incl. lots of comments, no external libraries); **no code from that adaptation is left**. "AniScript Lite 0.1.5" mentioned in the source header is my own earlier version.
+
+Komplett neu geschrieben: Vom ursprünglich adaptierten ~5000-Zeilen-Script ist kein Code mehr drin.
